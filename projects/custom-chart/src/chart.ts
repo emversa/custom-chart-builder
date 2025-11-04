@@ -287,7 +287,7 @@ function renderWidget(
   // Clear container
   container.innerHTML = '';
   container.style.backgroundColor = theme.backgroundColor;
-  container.style.fontFamily = theme.fontFamily;
+  // Font family is set in CSS to Roboto
 
   // Handle empty state
   if (state.total === 0 || state.categories.length === 0) {
