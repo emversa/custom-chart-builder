@@ -1,38 +1,34 @@
 {
   "slots": [
     {
+      "name": "measure",
+      "rotate": false,
+      "label": "Health Score",
+      "description": "Add a numeric column containing health scores (0-100). Scores are categorized as: Healthy (81-100), Warning (51-80), Error (0-50).",
+      "type": "numeric",
+      "order": 1,
+      "options": {
+        "isAggregationDisabled": true
+      },
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["numeric"],
+      "position": "middle"
+    },
+    {
       "name": "category",
       "rotate": false,
-      "label": "Category",
+      "label": "Record ID (Optional)",
+      "description": "Add a unique identifier column (ID, timestamp, etc.) to ensure all records are counted. This prevents data aggregation.",
       "type": "categorical",
-      "options": {
-        "isBinningDisabled": true,
-        "areDatetimeOptionsEnabled": true
-      },
-      "isRequired": true,
-      "acceptableColumnTypes": ["hierarchy", "datetime"]
-    },
-    {
-      "name": "measure",
-      "rotate": true,
-      "label": "Value",
-      "type": "numeric",
-      "options": {
-        "isAggregationDisabled": false
-      },
-      "isRequired": true,
-      "acceptableColumnTypes": ["numeric"]
-    },
-    {
-      "name": "legend",
-      "rotate": false,
-      "label": "Legend",
-      "type": "categorical",
+      "order": 2,
       "options": {
         "isBinningDisabled": true
       },
       "isRequired": false,
-      "acceptableColumnTypes": ["hierarchy", "datetime"]
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy", "datetime", "numeric"],
+      "position": "top-left"
     }
   ]
 }
