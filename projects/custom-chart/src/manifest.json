@@ -7,9 +7,6 @@
       "description": "Add a numeric column containing health scores (0-100). Scores are categorized as: Healthy (81-100), Warning (51-80), Error (0-50).",
       "type": "numeric",
       "order": 1,
-      "options": {
-        "isAggregationDisabled": true
-      },
       "isRequired": true,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["numeric"],

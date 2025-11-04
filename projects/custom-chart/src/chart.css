@@ -5,95 +5,74 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: clamp(12px, 3vh, 20px);
   box-sizing: border-box;
   border-radius: 16px;
   overflow: visible;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   /* Background color is set dynamically via inline style based on score */
 }
 
 /* Widget title */
 .widget-title {
-  font-size: 20px;
+  font-size: clamp(16px, 4vw, 20px);
   font-weight: 700;
-  margin-bottom: 16px;
+  margin-bottom: clamp(8px, 2vh, 16px);
   opacity: 1;
   letter-spacing: -0.02em;
 }
 
-/* Content wrapper for categories and chart */
+/* Content wrapper for categories and chart - always horizontal */
 .widget-content {
   flex: 1;
   display: flex;
-  gap: 2px;
-  overflow: visible;
-}
-
-/* Desktop layout: categories on left (40%), chart on right (60%) */
-.widget-content.desktop-layout {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+  gap: clamp(2px, 1vw, 8px);
+  overflow: visible;
+  min-height: 0;
 }
 
-.widget-content.desktop-layout .categories-section {
-  flex: 0 0 auto;
+.widget-content .categories-section {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  order: 1;
+  min-width: 0;
+  padding-right: clamp(12px, 2vw, 24px);
 }
 
-.widget-content.desktop-layout .chart-section {
+.widget-content .chart-section {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  order: 2;
-  padding: 12px;
+  padding: clamp(4px, 1vh, 12px);
   overflow: visible;
-  margin-right: -12px;
+  margin-right: clamp(-8px, -1vw, -12px);
 }
 
-/* Mobile layout: chart on top, categories below */
-.widget-content.mobile-layout {
-  flex-direction: column;
-  gap: 2px;
-}
-
-.widget-content.mobile-layout .chart-section {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-}
-
-.widget-content.mobile-layout .categories-section {
-  flex: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  width: 100%;
-}
-
-/* Categories list */
+/* Categories list - allow more space to prevent text wrapping */
 .categories-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: clamp(4px, 1.5vh, 16px);
   width: 100%;
-  max-width: 300px;
+  max-width: 400px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .category-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: clamp(8px, 1.5vw, 12px);
   cursor: pointer;
-  padding: 8px 12px;
+  padding: clamp(4px, 1vh, 8px) clamp(8px, 1.5vw, 12px);
   border-radius: 8px;
-  transition: background-color 0.2s ease, transform 0.15s ease;
+  transition: all 0.25s ease;
+  position: relative;
 }
 
 .category-item:hover {
@@ -105,10 +84,16 @@
   transform: translateX(2px);
 }
 
+/* Selected state - same as hover */
+.category-item.category-selected {
+  background-color: rgba(0, 0, 0, 0.05);
+  transform: translateX(4px);
+}
+
 /* Color indicator bar */
 .category-indicator {
   width: 4px;
-  height: 40px;
+  height: clamp(28px, 5vh, 40px);
   border-radius: 2px;
   flex-shrink: 0;
 }
@@ -119,16 +104,20 @@
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  min-width: 0; /* Allow text to shrink */
 }
 
 .category-label {
-  font-size: 13px;
+  font-size: clamp(11px, 2.5vw, 13px);
   font-weight: 500;
   opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .category-count {
-  font-size: 28px;
+  font-size: clamp(20px, 5vw, 28px);
   font-weight: 700;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
@@ -223,11 +212,15 @@
   line-height: 1.5;
 }
 
-/* Responsive adjustments for very small screens */
-@media (max-width: 400px) {
+/* Adjustments for compact layouts (10x12 grid ~400-600px) */
+@media (max-width: 600px) {
   .status-widget {
-    padding: 12px;
-    gap: 12px;
+    padding: 16px;
+  }
+
+  .widget-title {
+    font-size: 18px;
+    margin-bottom: 12px;
   }
 
   .categories-list {
@@ -240,6 +233,38 @@
 
   .category-label {
     font-size: 12px;
+  }
+
+  .category-indicator {
+    height: 36px;
+  }
+}
+
+/* Responsive adjustments for very small screens */
+@media (max-width: 400px) {
+  .status-widget {
+    padding: 12px;
+  }
+
+  .widget-title {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+
+  .categories-list {
+    gap: 10px;
+  }
+
+  .category-count {
+    font-size: 20px;
+  }
+
+  .category-label {
+    font-size: 11px;
+  }
+
+  .category-indicator {
+    height: 32px;
   }
 
   .empty-state-icon {

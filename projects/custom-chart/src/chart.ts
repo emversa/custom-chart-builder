@@ -25,6 +25,8 @@ interface ChartState {
   aggregatedScore: number; // The aggregated score to display in center
   measureSlot?: Slot;
   legendSlot?: Slot;
+  allScores: number[]; // Store all raw scores for filtering
+  selectedCategory?: 'Healthy' | 'Warning' | 'Error' | null; // Track selected filter
 }
 
 interface ThemeContext {
@@ -96,6 +98,9 @@ function sendCustomEvent(data: any): void {
 
 /**
  * Categorize a score into health status
+ * Healthy: 81-100
+ * Warning: 51-80
+ * Error: 0-50
  */
 function categorizeScore(score: number): 'Healthy' | 'Warning' | 'Error' {
   if (score >= 81) return 'Healthy';
@@ -212,7 +217,9 @@ function processData(
     total,
     aggregatedScore,
     measureSlot,
-    legendSlot
+    legendSlot,
+    allScores: scores, // Store all scores for filtering
+    selectedCategory: null // No filter by default
   };
 }
 
@@ -310,16 +317,10 @@ function renderWidget(
   contentWrapper.className = 'widget-content';
   widget.appendChild(contentWrapper);
 
-  // Determine layout based on width
-  const isMobile = width < 500;
+  // Always use horizontal layout - never stack vertically
+  contentWrapper.classList.add('desktop-layout');
 
-  if (isMobile) {
-    contentWrapper.classList.add('mobile-layout');
-  } else {
-    contentWrapper.classList.add('desktop-layout');
-  }
-
-  // Render categories list FIRST (left side or bottom on mobile)
+  // Render categories list FIRST (left side)
   const listContainer = document.createElement('div');
   listContainer.className = 'categories-section';
   contentWrapper.appendChild(listContainer);
@@ -331,10 +332,11 @@ function renderWidget(
   chartContainer.className = 'chart-section';
   contentWrapper.appendChild(chartContainer);
 
-  renderDonutChart(chartContainer, state, theme, isMobile ? width : width * 0.6);
+  // Donut takes about 45% of width for good balance
+  renderDonutChart(chartContainer, state, theme, width * 0.45);
 
   // Add click handlers for filtering
-  addInteractionHandlers(container, state);
+  addInteractionHandlers(container, state, theme, width, height);
 }
 
 /**
@@ -372,7 +374,9 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  const size = Math.min(containerWidth * 0.8, 200);
+  // Scale donut size based on container, optimized for horizontal layout
+  // At small sizes, donut should be smaller to fit alongside legend
+  const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
   const radius = size / 2;
   const innerRadius = radius * 0.6;
 
@@ -431,6 +435,7 @@ function renderDonutChart(
         .attr('d', arcHover)
         .style('filter', 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))');
 
+      // Show tooltip first to get its dimensions
       tooltip
         .style('opacity', 1)
         .html(`
@@ -439,9 +444,40 @@ function renderDonutChart(
             <div><strong>${d.data.count}</strong> records</div>
             <div><strong>${percentage}%</strong> of total</div>
           </div>
-        `)
-        .style('left', `${event.offsetX + 10}px`)
-        .style('top', `${event.offsetY - 10}px`);
+        `);
+
+      // Get tooltip dimensions and container bounds
+      const tooltipNode = tooltip.node() as HTMLElement;
+      const tooltipRect = tooltipNode.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+
+      // Calculate position, ensuring tooltip stays within bounds
+      let left = event.offsetX + 10;
+      let top = event.offsetY - 10;
+
+      // Check right edge
+      if (left + tooltipRect.width > containerRect.width) {
+        left = event.offsetX - tooltipRect.width - 10;
+      }
+
+      // Check bottom edge
+      if (top + tooltipRect.height > containerRect.height) {
+        top = event.offsetY - tooltipRect.height - 10;
+      }
+
+      // Check left edge
+      if (left < 0) {
+        left = 10;
+      }
+
+      // Check top edge
+      if (top < 0) {
+        top = 10;
+      }
+
+      tooltip
+        .style('left', `${left}px`)
+        .style('top', `${top}px`);
     })
     .on('mouseout', function() {
       d3.select(this)
@@ -481,6 +517,12 @@ function renderCategoriesList(
   state.categories.forEach(category => {
     const item = document.createElement('div');
     item.className = 'category-item';
+
+    // Add selected class if this category is currently selected
+    if (state.selectedCategory === category.value) {
+      item.classList.add('category-selected');
+    }
+
     item.setAttribute('data-category', category.name);
 
     // Color indicator
@@ -513,13 +555,19 @@ function renderCategoriesList(
 /**
  * Add interaction handlers for filtering
  */
-function addInteractionHandlers(container: HTMLElement, state: ChartState): void {
+function addInteractionHandlers(
+  container: HTMLElement,
+  state: ChartState,
+  theme: ThemeContext,
+  width: number,
+  height: number
+): void {
   // Category item clicks
   const categoryItems = container.querySelectorAll('.category-item');
   categoryItems.forEach((item, index) => {
     item.addEventListener('click', () => {
       const category = state.categories[index];
-      handleCategoryClick(category, state);
+      handleCategoryClick(category, state, container, theme, width, height);
     });
   });
 
@@ -528,32 +576,89 @@ function addInteractionHandlers(container: HTMLElement, state: ChartState): void
   segments.forEach((segment, index) => {
     segment.addEventListener('click', () => {
       const category = state.categories[index];
-      handleCategoryClick(category, state);
+      handleCategoryClick(category, state, container, theme, width, height);
     });
   });
 }
 
 /**
- * Handle category click for filtering
+ * Handle category click for filtering and recalculation
  */
-function handleCategoryClick(category: StatusCategory, state: ChartState): void {
+function handleCategoryClick(
+  category: StatusCategory,
+  state: ChartState,
+  container: HTMLElement,
+  theme: ThemeContext,
+  width: number,
+  height: number
+): void {
+  // Toggle selection: if clicking same category, deselect it
+  const clickedValue = category.value as 'Healthy' | 'Warning' | 'Error';
+  const wasSelected = state.selectedCategory === clickedValue;
+
+  // Update selection state
+  state.selectedCategory = wasSelected ? null : clickedValue;
+
+  // Recalculate based on selection
+  let filteredScores: number[];
+  let newAggregatedScore: number;
+  let newTotal: number;
+
+  if (state.selectedCategory) {
+    // Filter scores based on selected category
+    filteredScores = state.allScores.filter(score => {
+      const cat = categorizeScore(score);
+      return cat === state.selectedCategory;
+    });
+    newTotal = filteredScores.length;
+    newAggregatedScore = newTotal > 0
+      ? Math.round(filteredScores.reduce((sum, score) => sum + score, 0) / newTotal)
+      : 0;
+  } else {
+    // Show all data
+    filteredScores = state.allScores;
+    newTotal = state.allScores.length;
+    newAggregatedScore = newTotal > 0
+      ? Math.round(filteredScores.reduce((sum, score) => sum + score, 0) / newTotal)
+      : 0;
+  }
+
+  // Update state
+  state.total = newTotal;
+  state.aggregatedScore = newAggregatedScore;
+
+  // Recalculate category counts based on filtered data
+  const newCounts = { 'Healthy': 0, 'Warning': 0, 'Error': 0 };
+  filteredScores.forEach(score => {
+    const cat = categorizeScore(score);
+    newCounts[cat]++;
+  });
+
+  // Update category counts
+  state.categories.forEach(cat => {
+    cat.count = newCounts[cat.value as 'Healthy' | 'Warning' | 'Error'];
+  });
+
+  // Re-render the widget with updated state
+  renderWidget(container, state, theme, width, height);
+
   // Send custom event
   sendCustomEvent({
     eventType: 'statusCategorySelected',
     category: category.name,
     count: category.count,
     totalRecords: state.total,
-    aggregatedScore: state.aggregatedScore
+    aggregatedScore: state.aggregatedScore,
+    isFiltered: state.selectedCategory !== null
   });
 
-  // Filter based on score ranges
-  if (state.measureSlot?.content && state.measureSlot.content.length > 0) {
+  // Also send filter event to dashboard (only if category is selected, not deselected)
+  if (state.selectedCategory && state.measureSlot?.content && state.measureSlot.content.length > 0) {
     const column = state.measureSlot.content[0];
     let filters: ItemFilter[] = [];
 
     // Determine the score range based on category
-    if (category.value === 'Healthy') {
-      // Filter for scores >= 81
+    if (clickedValue === 'Healthy') {
       filters = [{
         expression: '? >= ?',
         parameters: [
@@ -568,32 +673,47 @@ function handleCategoryClick(category: StatusCategory, state: ChartState): void 
           type: 'where'
         }
       }];
-    } else if (category.value === 'Warning') {
-      // Filter for scores between 51 and 80
-      filters = [{
-        expression: '? between ?',
-        parameters: [
-          {
-            column_id: column.columnId,
-            dataset_id: column.datasetId
-          },
-          [51, 80]
-        ],
-        properties: {
-          origin: 'filterFromVizItem',
-          type: 'where'
+    } else if (clickedValue === 'Warning') {
+      // Filter for scores >= 51 AND <= 80 using two filters
+      filters = [
+        {
+          expression: '? >= ?',
+          parameters: [
+            {
+              column_id: column.columnId,
+              dataset_id: column.datasetId
+            },
+            51
+          ],
+          properties: {
+            origin: 'filterFromVizItem',
+            type: 'where'
+          }
+        },
+        {
+          expression: '? <= ?',
+          parameters: [
+            {
+              column_id: column.columnId,
+              dataset_id: column.datasetId
+            },
+            80
+          ],
+          properties: {
+            origin: 'filterFromVizItem',
+            type: 'where'
+          }
         }
-      }];
-    } else if (category.value === 'Error') {
-      // Filter for scores <= 50
+      ];
+    } else if (clickedValue === 'Error') {
       filters = [{
-        expression: '? <= ?',
+        expression: '? < ?',
         parameters: [
           {
             column_id: column.columnId,
             dataset_id: column.datasetId
           },
-          50
+          51
         ],
         properties: {
           origin: 'filterFromVizItem',
@@ -605,6 +725,9 @@ function handleCategoryClick(category: StatusCategory, state: ChartState): void 
     if (filters.length > 0) {
       sendFilterEvent(filters);
     }
+  } else if (!state.selectedCategory) {
+    // Clear filter when deselected
+    sendFilterEvent([]);
   }
 }
 
@@ -663,7 +786,7 @@ export const buildQuery = ({
   return {
     dimensions,
     measures,
-    order: [],
-    limit: { by: 10000, offset: 0 } // Limit to 10,000 records for performance
+    order: []
+    // No limit - process all records
   };
 };
