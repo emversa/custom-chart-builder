@@ -1,4 +1,3 @@
-import { formatter } from '@luzmo/analytics-components-kit/utils';
 import type {
   ItemData,
   ItemFilter,
@@ -111,12 +110,6 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
   const luminance = getRelativeLuminance(backgroundRgb);
   const textColor = luminance < 0.45 ? '#f8fafc' : '#1f2937';
 
-  const paletteFromTheme = (theme?.colors ?? []).filter(Boolean) as string[];
-  const mainColor = theme?.mainColor || paletteFromTheme[0] || '#6366f1';
-
-  // Always use config colors for consistency
-  const colors = DEFAULT_CONFIG.colors;
-
   const fontFamily = theme?.font?.fontFamily ||
     'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
@@ -124,9 +117,25 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
     backgroundColor,
     textColor,
     fontFamily,
-    mainColor,
-    colors
+    mainColor: (theme as any)?.mainColor || '#6366f1',
+    colors: DEFAULT_CONFIG.colors
   };
+}
+
+/**
+ * Extract column label from slot content
+ */
+function extractColumnLabel(column: any, language: string, fallback = 'Attribute'): string {
+  if (typeof column.label === 'object' && column.label !== null) {
+    return column.label.en || column.label[language] || Object.values(column.label)[0] || fallback;
+  }
+  if (column.label) {
+    return String(column.label);
+  }
+  if (column.columnId) {
+    return String(column.columnId);
+  }
+  return fallback;
 }
 
 function sendFilterEvent(filters: ItemFilter[]): void {
@@ -191,19 +200,9 @@ function processData(
   const titleSlot = slots.find(s => s.name === 'legend');
 
   // Extract attribute column name from the slot content
-  let attributeName = 'Attribute';
-  if (statusSlot?.content && statusSlot.content.length > 0) {
-    const column = statusSlot.content[0];
-
-    // Get the column name from the label property
-    if (typeof column.label === 'object' && column.label !== null) {
-      attributeName = column.label.en || column.label[language] || Object.values(column.label)[0] || 'Attribute';
-    } else if (column.label) {
-      attributeName = String(column.label);
-    } else if (column.columnId) {
-      attributeName = String(column.columnId);
-    }
-  }
+  const attributeName = statusSlot?.content?.[0]
+    ? extractColumnLabel(statusSlot.content[0], language, 'Attribute')
+    : 'Attribute';
 
   // Store all records for filtering
   let allRecords: any[] = [];
@@ -223,7 +222,7 @@ function processData(
   // Process data
   if (statusSlot?.content && statusSlot.content.length > 0 &&
       recordIdSlot?.content && recordIdSlot.content.length > 0 &&
-      data.length > 0) {
+      data && data.length > 0) {
 
     // Data structure: [Status Value Object, Record ID Object, Order Value Object (optional)]
     // Each item is an object with { id, name, color, order }
@@ -267,19 +266,9 @@ function processData(
   }
 
   // Extract title from title slot column name only if provided
-  let customTitle: string | undefined = undefined;
-  if (hasTitleColumn && titleSlot?.content && titleSlot.content.length > 0) {
-    const titleColumn = titleSlot.content[0];
-
-    // Get the column name from the label property
-    if (typeof titleColumn.label === 'object' && titleColumn.label !== null) {
-      customTitle = titleColumn.label.en || titleColumn.label[language] || Object.values(titleColumn.label)[0];
-    } else if (titleColumn.label) {
-      customTitle = String(titleColumn.label);
-    } else if (titleColumn.columnId) {
-      customTitle = String(titleColumn.columnId);
-    }
-  }
+  const customTitle = hasTitleColumn && titleSlot?.content?.[0]
+    ? extractColumnLabel(titleSlot.content[0], language, '')
+    : undefined;
 
   // Fallback: sample data (demo)
   if (allRecords.length === 0) {
@@ -320,7 +309,7 @@ function processData(
   }
 
   // Assign colors to status values using config
-  const colorMap = assignColors(uniqueStatusValues, config, statusOrders, hasOrderColumn);
+  const colorMap = assignColors(uniqueStatusValues, config, statusOrders, !!hasOrderColumn);
 
   // Total unique records
   const allUniqueRecords = new Set(allRecords.map(r => r.recordId));
@@ -419,6 +408,13 @@ export const resize = ({
   }
 };
 
+// Map specific colors to their background colors (uppercase for efficient matching)
+const BACKGROUND_COLOR_MAP: Record<string, string> = {
+  '#75BB43': '#DDF3CD', // Green -> light green
+  '#FEC325': '#FFEFD4', // Yellow -> light yellow
+  '#BA1A1A': '#FFE2E4', // Red -> light red
+};
+
 /**
  * Get background color based on the dominant category (highest count)
  */
@@ -430,17 +426,10 @@ function getBackgroundColor(categories: StatusCategory[]): string {
     cat.count > max.count ? cat : max
   , categories[0]);
 
-  // Map specific colors to their background colors
-  const colorMap: Record<string, string> = {
-    '#75BB43': '#DDF3CD', // Green -> light green
-    '#FEC325': '#FFEFD4', // Yellow -> light yellow
-    '#BA1A1A': '#FFE2E4', // Red -> light red
-  };
-
   // Return mapped background color or calculate a light version
-  const dominantColor = dominantCategory.color.toUpperCase();
-  if (colorMap[dominantColor]) {
-    return colorMap[dominantColor];
+  const mappedColor = BACKGROUND_COLOR_MAP[dominantCategory.color];
+  if (mappedColor) {
+    return mappedColor;
   }
 
   // Fallback: blend with white for other colors
@@ -497,9 +486,6 @@ function renderWidget(
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'widget-content';
   widget.appendChild(contentWrapper);
-
-  // Always use horizontal layout - never stack vertically
-  contentWrapper.classList.add('desktop-layout');
 
   // Render categories list FIRST (left side)
   const listContainer = document.createElement('div');
@@ -612,7 +598,7 @@ function renderDonutChart(
       d3.select(this)
         .transition()
         .duration(200)
-        .attr('d', arcHover)
+        .attr('d', arcHover as any)
         .style('filter', 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))');
 
       // Show tooltip first to get its dimensions
@@ -663,7 +649,7 @@ function renderDonutChart(
       d3.select(this)
         .transition()
         .duration(200)
-        .attr('d', arc)
+        .attr('d', arc as any)
         .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
 
       tooltip.style('opacity', 0);
@@ -882,7 +868,6 @@ export const buildQuery = ({
   const statusSlot = slots.find(s => s.name === 'category');
   const recordIdSlot = slots.find(s => s.name === 'identifier');
   const orderSlot = slots.find(s => s.name === 'measure');
-  const titleSlot = slots.find(s => s.name === 'legend');
 
   if (!statusSlot?.content || statusSlot.content.length === 0 ||
       !recordIdSlot?.content || recordIdSlot.content.length === 0) {
