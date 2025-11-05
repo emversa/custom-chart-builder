@@ -430,16 +430,25 @@ function getBackgroundColor(categories: StatusCategory[]): string {
     cat.count > max.count ? cat : max
   , categories[0]);
 
-  // Use a light version of the dominant category's color
-  const dominantColor = d3.color(dominantCategory.color);
-  if (!dominantColor) return '#f3f4f6';
+  // Map specific colors to their background colors
+  const colorMap: Record<string, string> = {
+    '#75BB43': '#DDF3CD', // Green -> light green
+    '#FEC325': '#FFEFD4', // Yellow -> light yellow
+    '#BA1A1A': '#FFE2E4', // Red -> light red
+  };
 
-  const rgb = d3.rgb(dominantColor);
-  // Make it very light by blending with white
+  // Return mapped background color or calculate a light version
+  const dominantColor = dominantCategory.color.toUpperCase();
+  if (colorMap[dominantColor]) {
+    return colorMap[dominantColor];
+  }
+
+  // Fallback: blend with white for other colors
+  const rgbColor = d3.rgb(dominantCategory.color);
   return d3.rgb(
-    255 - (255 - rgb.r) * 0.15,
-    255 - (255 - rgb.g) * 0.15,
-    255 - (255 - rgb.b) * 0.15
+    255 - (255 - rgbColor.r) * 0.15,
+    255 - (255 - rgbColor.g) * 0.15,
+    255 - (255 - rgbColor.b) * 0.15
   ).toString();
 }
 
