@@ -134,7 +134,7 @@ function processData(
 
   // Predefined colors for health categories
   const healthyColor = '#75BB43';  // Green
-  const warningColor = '#FEC235';  // Yellow
+  const warningColor = '#FEC325';  // Yellow
   const errorColor = '#BA1A1A';    // Red
 
   // Track COUNT of records in each category
@@ -497,7 +497,7 @@ function renderDonutChart(
     .attr('x', 0)
     .attr('y', 0)
     .style('font-size', `${radius * 0.5}px`)
-    .style('font-weight', '700')
+    .style('font-weight', '300')
     .style('fill', theme.textColor)
     .text(`${state.aggregatedScore}`);
 }
