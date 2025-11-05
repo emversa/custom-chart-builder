@@ -20,6 +20,8 @@
   margin-bottom: clamp(8px, 2vh, 16px);
   opacity: 1;
   letter-spacing: -0.02em;
+  /* Reserve consistent space for title */
+  min-height: clamp(16px, 4vw, 20px);
 }
 
 /* Content wrapper for categories and chart - always horizontal */
@@ -31,7 +33,11 @@
   justify-content: space-between;
   gap: clamp(2px, 1vw, 8px);
   overflow: visible;
-  min-height: 0;
+  /* Ensure consistent height for 3 legend rows regardless of actual content */
+  min-height: calc(
+    3 * (clamp(28px, 5vh, 40px) + clamp(8px, 2vh, 16px)) +
+    2 * clamp(4px, 1.5vh, 16px)
+  );
 }
 
 .widget-content .categories-section {
@@ -62,6 +68,12 @@
   max-width: 400px;
   flex: 1 1 auto;
   min-width: 0;
+  /* Ensure consistent height for 3 rows: 3 items + 2 gaps */
+  min-height: calc(
+    3 * (clamp(28px, 5vh, 40px) + clamp(8px, 2vh, 16px)) +
+    2 * clamp(4px, 1.5vh, 16px)
+  );
+  justify-content: flex-start;
 }
 
 .category-item {
@@ -109,7 +121,7 @@
 
 .category-label {
   font-size: clamp(11px, 2.5vw, 13px);
-  font-weight: 500;
+  font-weight: 300;
   opacity: 0.8;
   white-space: nowrap;
   overflow: hidden;
@@ -118,7 +130,7 @@
 
 .category-count {
   font-size: clamp(20px, 5vw, 28px);
-  font-weight: 700;
+  font-weight: 300;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
@@ -161,7 +173,7 @@
 }
 
 .tooltip-category {
-  font-weight: 600;
+  font-weight: 300;
   margin-bottom: 8px;
   font-size: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
@@ -176,7 +188,7 @@
 }
 
 .tooltip-stats strong {
-  font-weight: 700;
+  font-weight: 300;
   color: #fbbf24;
 }
 
@@ -201,7 +213,7 @@
 
 .empty-state-title {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 300;
   opacity: 0.9;
 }
 

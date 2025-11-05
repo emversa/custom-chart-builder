@@ -1,31 +1,55 @@
 {
   "slots": [
     {
-      "name": "measure",
+      "name": "category",
       "rotate": false,
-      "label": "Health Score",
-      "description": "Add a numeric column containing health scores (0-100). Scores are categorized as: Healthy (81-100), Warning (51-80), Error (0-50).",
-      "type": "numeric",
+      "label": "Status Attribute",
+      "description": "Add a categorical column (e.g., Status, State) to group records by. Each unique value will appear in the legend with its count.",
+      "type": "categorical",
       "order": 1,
       "isRequired": true,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["numeric"],
-      "position": "middle"
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "top-left"
     },
     {
-      "name": "category",
+      "name": "identifier",
       "rotate": false,
-      "label": "Record ID (Optional)",
-      "description": "Add a unique identifier column (ID, timestamp, etc.) to ensure all records are counted. This prevents data aggregation.",
+      "label": "Record ID",
+      "description": "Add a unique identifier column (ID, timestamp, etc.) to count unique records. This ensures accurate counting without aggregation.",
       "type": "categorical",
       "order": 2,
       "options": {
         "isBinningDisabled": true
       },
-      "isRequired": false,
+      "isRequired": true,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["hierarchy", "datetime", "numeric"],
-      "position": "top-left"
+      "position": "middle"
+    },
+    {
+      "name": "measure",
+      "rotate": false,
+      "label": "Order (Optional)",
+      "description": "Add a numeric column (e.g., _ORDER) to control color assignment and center metric. 0=Green, 1=Red, 2=Yellow, etc. Lowest number shows as center %. If omitted, uses alphabetical order.",
+      "type": "numeric",
+      "order": 3,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["numeric"],
+      "position": "bottom-left"
+    },
+    {
+      "name": "legend",
+      "rotate": false,
+      "label": "Title (Optional)",
+      "description": "Add any column to use its name as the chart title. The column NAME will be displayed (not its values). If omitted, shows the Status Attribute column name.",
+      "type": "categorical",
+      "order": 4,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "bottom-right"
     }
   ]
 }

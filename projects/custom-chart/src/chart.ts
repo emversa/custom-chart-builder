@@ -16,17 +16,21 @@ interface StatusCategory {
   color: string;
   columnId?: string;
   datasetId?: string;
-  value?: any; // Original value for filtering
+  value?: string; // Actual attribute value (e.g., "Active", "Offline")
 }
 
 interface ChartState {
   categories: StatusCategory[];
   total: number;
-  aggregatedScore: number; // The aggregated score to display in center
-  measureSlot?: Slot;
-  legendSlot?: Slot;
-  allScores: number[]; // Store all raw scores for filtering
-  selectedCategory?: 'Healthy' | 'Warning' | 'Error' | null; // Track selected filter
+  centerMetric: number | string; // Percentage or total count for center display
+  statusSlot?: Slot;
+  recordIdSlot?: Slot;
+  orderSlot?: Slot;
+  allRecords: any[]; // Store all raw records for filtering
+  selectedCategory?: string | null; // Track selected filter by attribute value
+  centerMetricValue?: string; // The attribute value to show percentage for in center
+  title?: string; // Title to display (optional - only shown if Title slot is filled)
+  attributeName: string; // Name of the attribute column
 }
 
 interface ThemeContext {
@@ -46,6 +50,46 @@ interface ChartParams {
   language: string;
   dimensions: { width: number; height: number };
 }
+
+// Configuration options
+interface ComponentConfig {
+  title: string;
+  colors: string[]; // Color palette assigned by position (1st value, 2nd value, 3rd value, etc.)
+  centerMetricIndex: number | null; // Which value position (0-based) to show as % in center. null = show total count
+}
+
+// Default configuration
+const DEFAULT_CONFIG: ComponentConfig = {
+  title: 'KPI Status',
+  // Colors assigned by position to attribute values (sorted alphabetically)
+  //
+  // IMPORTANT: Attribute values are sorted ALPHABETICALLY before color assignment
+  // Examples:
+  //   TRUE/FALSE -> FALSE=1st (index 0), TRUE=2nd (index 1)
+  //   Active/Inactive -> Active=1st (index 0), Inactive=2nd (index 1)
+  //   Online/Offline -> Offline=1st (index 0), Online=2nd (index 1)
+  //
+  // To show TRUE as green and FALSE as red, swap first two colors:
+  //   colors: ['#BA1A1A', '#75BB43', ...]  <- FALSE=Red, TRUE=Green
+  //
+  colors: [
+    '#75BB43', // 1st value (alphabetically, index 0) - Green
+    '#BA1A1A', // 2nd value (index 1) - Red
+    '#FEC325', // 3rd value (index 2) - Yellow (FIXED HEX)
+    '#3b82f6', // 4th value (index 3) - Blue
+    '#8b5cf6', // 5th value (index 4) - Purple
+    '#ec4899', // 6th value (index 5) - Pink
+    '#06b6d4', // 7th value (index 6) - Cyan
+    '#84cc16', // 8th value (index 7) - Lime
+  ],
+
+  // Center Metric Configuration (used when Order column is NOT provided):
+  // null = show total count
+  // 0 = show percentage of 1st value (alphabetically)
+  // 1 = show percentage of 2nd value (alphabetically)
+  // NOTE: If Order column IS provided, the value with order=0 is always shown as %
+  centerMetricIndex: 1  // Show 2nd value percentage (TRUE for TRUE/FALSE without Order column)
+};
 
 // Helper functions
 function toRgb(color?: string, fallback = '#ffffff'): d3.RGBColor {
@@ -70,14 +114,11 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
   const paletteFromTheme = (theme?.colors ?? []).filter(Boolean) as string[];
   const mainColor = theme?.mainColor || paletteFromTheme[0] || '#6366f1';
 
-  // Default status colors: green, yellow, red
-  const defaultColors = ['#10b981', '#f59e0b', '#ef4444'];
-  const colors = paletteFromTheme.length >= 3
-    ? paletteFromTheme.slice(0, 3)
-    : [...paletteFromTheme, ...defaultColors].slice(0, 3);
+  // Always use config colors for consistency
+  const colors = DEFAULT_CONFIG.colors;
 
   const fontFamily = theme?.font?.fontFamily ||
-    '-apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
+    'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
   return {
     backgroundColor,
@@ -97,129 +138,233 @@ function sendCustomEvent(data: any): void {
 }
 
 /**
- * Categorize a score into health status
- * Healthy: 81-100
- * Warning: 51-80
- * Error: 0-50
+ * Assign colors to attribute values by position
+ * Values are sorted alphabetically, then colors are assigned by index
+ * Example: FALSE, TRUE -> FALSE=colors[0] (green), TRUE=colors[1] (red)
  */
-function categorizeScore(score: number): 'Healthy' | 'Warning' | 'Error' {
-  if (score >= 81) return 'Healthy';
-  if (score >= 51) return 'Warning';
-  return 'Error';
+function assignColors(
+  uniqueValues: string[],
+  config: ComponentConfig
+): Record<string, string> {
+  const colorMap: Record<string, string> = {};
+
+  uniqueValues.forEach((value, index) => {
+    colorMap[value] = config.colors[index % config.colors.length];
+  });
+
+  return colorMap;
 }
 
 /**
  * Process data from slots into StatusCategory array
  *
  * LOGIC:
- * 1. Input: Multiple rows with health scores (e.g., 1000 records)
- * 2. For each score, categorize into: Healthy (81-100), Warning (51-80), Error (0-50)
- * 3. Legend shows: COUNT of records in each category
- * 4. Center shows: AVERAGE (aggregated) score across all records
+ * 1. Input: Multiple rows with [Status Attribute, Record ID]
+ * 2. Count unique records per each status attribute value
+ * 3. Legend shows: COUNT of unique records per attribute value
+ * 4. Center shows: PERCENTAGE of selected attribute value OR total count
  *
- * Example: 1000 records
- *  - 500 records with scores 81-100 → Healthy count = 500
- *  - 300 records with scores 51-80 → Warning count = 300
- *  - 200 records with scores 0-50 → Error count = 200
- *  - Center displays: Average of all 1000 scores (e.g., 72)
+ * Example: 1000 unique records
+ *  - 600 records with Status="Active" → Active count = 600 (60%)
+ *  - 400 records with Status="Not Active" → Not Active count = 400 (40%)
+ *  - If center metric is set to "Active", center displays: 60%
  */
 function processData(
   data: ItemData['data'],
   slots: Slot[],
   colors: string[],
-  language: string
+  language: string,
+  config: ComponentConfig = DEFAULT_CONFIG
 ): ChartState {
-  const measureSlot = slots.find(s => s.name === 'measure');
-  const legendSlot = slots.find(s => s.name === 'legend');
+  const statusSlot = slots.find(s => s.name === 'category');
+  const recordIdSlot = slots.find(s => s.name === 'identifier');
+  const orderSlot = slots.find(s => s.name === 'measure');
+  const titleSlot = slots.find(s => s.name === 'legend');
 
-  // Predefined colors for health categories
-  const healthyColor = '#75BB43';  // Green
-  const warningColor = '#FEC235';  // Yellow
-  const errorColor = '#BA1A1A';    // Red
+  // Extract attribute column name from the slot content
+  let attributeName = 'Attribute';
+  if (statusSlot?.content && statusSlot.content.length > 0) {
+    const column = statusSlot.content[0];
 
-  // Track COUNT of records in each category
-  const categoryCounts = {
-    'Healthy': 0,
-    'Warning': 0,
-    'Error': 0
-  };
+    // Get the column name from the label property
+    if (typeof column.label === 'object' && column.label !== null) {
+      attributeName = column.label.en || column.label[language] || Object.values(column.label)[0] || 'Attribute';
+    } else if (column.label) {
+      attributeName = String(column.label);
+    } else if (column.columnId) {
+      attributeName = String(column.columnId);
+    }
+  }
 
-  let scores: number[] = [];
+  // Store all records for filtering
+  let allRecords: any[] = [];
 
-  // Process data - expecting one score column with multiple rows (e.g., 1000 records)
-  if (measureSlot?.content && measureSlot.content.length > 0 && data.length > 0) {
-    // Get the first (and should be only) measure column
-    const scoreColumn = measureSlot.content[0];
+  // Track COUNT of unique records per status attribute value
+  const statusCounts: Record<string, Set<string>> = {};
 
-    // Check if we have a dimension column (ID) - if so, score is at index 1, otherwise index 0
-    const categorySlot = slots.find(s => s.name === 'category');
-    const hasDimension = categorySlot?.content && categorySlot.content.length > 0;
-    const scoreIndex = hasDimension ? 1 : 0;
+  // Track order values for each status value
+  const statusOrders: Record<string, number> = {};
 
-    // Process each row: categorize the score and count it
+  // Check if order column is provided
+  const hasOrderColumn = orderSlot?.content && orderSlot.content.length > 0;
+
+  // Check if title column is provided
+  const hasTitleColumn = titleSlot?.content && titleSlot.content.length > 0;
+
+  // Process data
+  if (statusSlot?.content && statusSlot.content.length > 0 &&
+      recordIdSlot?.content && recordIdSlot.content.length > 0 &&
+      data.length > 0) {
+
+    // Data structure: [Status Value Object, Record ID Object, Order Value Object (optional)]
+    // Each item is an object with { id, name, color, order }
     data.forEach((row) => {
-      const scoreValue = Number(row[scoreIndex]) || 0;
-      scores.push(scoreValue);
+      // Extract the actual value from the object structure
+      const statusValueObj = row[0];
+      const recordIdObj = row[1];
+      const orderValueObj = hasOrderColumn ? row[2] : undefined;
 
-      // Categorize this record and increment the count
-      const category = categorizeScore(scoreValue);
-      categoryCounts[category]++;
+      // Get the id field which contains the actual value
+      const statusValue = String(statusValueObj?.id ?? statusValueObj ?? 'Unknown');
+      const recordId = String(recordIdObj?.id ?? recordIdObj);
+
+      // Extract order value - it can be a plain number or an object
+      let orderValue: number | undefined = undefined;
+      if (orderValueObj !== undefined && orderValueObj !== null) {
+        if (typeof orderValueObj === 'number') {
+          orderValue = orderValueObj;
+        } else if (typeof orderValueObj === 'object' && 'id' in orderValueObj) {
+          orderValue = Number(orderValueObj.id);
+        } else {
+          orderValue = Number(orderValueObj);
+        }
+      }
+
+      allRecords.push({ statusValue, recordId });
+
+      // Count unique record IDs per status value
+      if (!statusCounts[statusValue]) {
+        statusCounts[statusValue] = new Set();
+      }
+      statusCounts[statusValue].add(recordId);
+
+      // Store order value if provided
+      if (orderValue !== undefined && !isNaN(orderValue)) {
+        if (!statusOrders[statusValue] || orderValue < statusOrders[statusValue]) {
+          statusOrders[statusValue] = orderValue;
+        }
+      }
     });
   }
 
-  // Fallback: sample data (12 records for demo)
-  if (scores.length === 0) {
-    scores = [95, 87, 92, 78, 65, 45, 32, 88, 91, 56, 72, 38];
-    scores.forEach(score => {
-      const category = categorizeScore(score);
-      categoryCounts[category]++;
+  // Extract title from title slot column name only if provided
+  let customTitle: string | undefined = undefined;
+  if (hasTitleColumn && titleSlot?.content && titleSlot.content.length > 0) {
+    const titleColumn = titleSlot.content[0];
+
+    // Get the column name from the label property
+    if (typeof titleColumn.label === 'object' && titleColumn.label !== null) {
+      customTitle = titleColumn.label.en || titleColumn.label[language] || Object.values(titleColumn.label)[0];
+    } else if (titleColumn.label) {
+      customTitle = String(titleColumn.label);
+    } else if (titleColumn.columnId) {
+      customTitle = String(titleColumn.columnId);
+    }
+  }
+
+  // Fallback: sample data (demo)
+  if (allRecords.length === 0) {
+    const sampleData = [
+      { statusValue: 'Active', recordId: '1' },
+      { statusValue: 'Active', recordId: '2' },
+      { statusValue: 'Active', recordId: '3' },
+      { statusValue: 'Active', recordId: '4' },
+      { statusValue: 'Active', recordId: '5' },
+      { statusValue: 'Active', recordId: '6' },
+      { statusValue: 'Not Active', recordId: '7' },
+      { statusValue: 'Not Active', recordId: '8' },
+      { statusValue: 'Not Active', recordId: '9' },
+      { statusValue: 'Not Active', recordId: '10' },
+    ];
+
+    allRecords = sampleData;
+    sampleData.forEach(record => {
+      if (!statusCounts[record.statusValue]) {
+        statusCounts[record.statusValue] = new Set();
+      }
+      statusCounts[record.statusValue].add(record.recordId);
     });
   }
 
-  // Calculate aggregated score = AVERAGE of all scores
-  const aggregatedScore = scores.length > 0
-    ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
-    : 0;
+  // Get unique status values and sort them
+  const uniqueStatusValues = Object.keys(statusCounts);
 
-  // Total = number of records processed
-  const total = scores.length;
+  // Sort by order column if provided, otherwise alphabetically
+  if (hasOrderColumn && Object.keys(statusOrders).length > 0) {
+    uniqueStatusValues.sort((a, b) => {
+      const orderA = statusOrders[a] ?? 999;
+      const orderB = statusOrders[b] ?? 999;
+      return orderA - orderB;
+    });
+  } else {
+    uniqueStatusValues.sort();
+  }
+
+  // Assign colors to status values using config
+  const colorMap = assignColors(uniqueStatusValues, config);
+
+  // Total unique records
+  const allUniqueRecords = new Set(allRecords.map(r => r.recordId));
+  const total = allUniqueRecords.size;
 
   // Build categories array
-  const categories: StatusCategory[] = [
-    {
-      name: 'Healthy (81-100)',
-      count: categoryCounts['Healthy'],
-      color: healthyColor,
-      columnId: measureSlot?.content?.[0]?.columnId,
-      datasetId: measureSlot?.content?.[0]?.datasetId,
-      value: 'Healthy'
-    },
-    {
-      name: 'Warning (51-80)',
-      count: categoryCounts['Warning'],
-      color: warningColor,
-      columnId: measureSlot?.content?.[0]?.columnId,
-      datasetId: measureSlot?.content?.[0]?.datasetId,
-      value: 'Warning'
-    },
-    {
-      name: 'Error (0-50)',
-      count: categoryCounts['Error'],
-      color: errorColor,
-      columnId: measureSlot?.content?.[0]?.columnId,
-      datasetId: measureSlot?.content?.[0]?.datasetId,
-      value: 'Error'
-    }
-  ];
+  const categories: StatusCategory[] = uniqueStatusValues.map(statusValue => ({
+    name: statusValue,
+    count: statusCounts[statusValue].size,
+    color: colorMap[statusValue],
+    columnId: statusSlot?.content?.[0]?.columnId,
+    datasetId: statusSlot?.content?.[0]?.datasetId,
+    value: statusValue
+  }));
+
+  // Calculate center metric
+  let centerMetric: number | string = total;
+  let centerMetricValue: string | undefined;
+
+  // Determine which value to show in center
+  let centerIndex: number | null = null;
+
+  if (hasOrderColumn && Object.keys(statusOrders).length > 0) {
+    // If order column provided, show the value with order=0 (or lowest order)
+    centerIndex = 0; // First in sorted order
+  } else if (config.centerMetricIndex !== null) {
+    // Otherwise use config setting
+    centerIndex = config.centerMetricIndex;
+  }
+
+  // Calculate percentage if centerIndex is set
+  if (centerIndex !== null &&
+      centerIndex >= 0 &&
+      centerIndex < uniqueStatusValues.length) {
+
+    centerMetricValue = uniqueStatusValues[centerIndex];
+    const count = statusCounts[centerMetricValue].size;
+    const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+    centerMetric = `${percentage}%`;
+  }
 
   return {
     categories,
     total,
-    aggregatedScore,
-    measureSlot,
-    legendSlot,
-    allScores: scores, // Store all scores for filtering
-    selectedCategory: null // No filter by default
+    centerMetric,
+    statusSlot,
+    recordIdSlot,
+    orderSlot,
+    allRecords,
+    selectedCategory: null,
+    centerMetricValue,
+    title: customTitle,
+    attributeName
   };
 }
 
@@ -266,12 +411,27 @@ export const resize = ({
 };
 
 /**
- * Get background color based on aggregated score
+ * Get background color based on the dominant category (highest count)
  */
-function getBackgroundColor(score: number): string {
-  if (score >= 81) return '#DDF3CD'; // Healthy
-  if (score >= 51) return '#FFEFD4'; // Warning
-  return '#FFE2E4'; // Error
+function getBackgroundColor(categories: StatusCategory[]): string {
+  if (categories.length === 0) return '#f3f4f6';
+
+  // Find category with highest count
+  const dominantCategory = categories.reduce((max, cat) =>
+    cat.count > max.count ? cat : max
+  , categories[0]);
+
+  // Use a light version of the dominant category's color
+  const dominantColor = d3.color(dominantCategory.color);
+  if (!dominantColor) return '#f3f4f6';
+
+  const rgb = d3.rgb(dominantColor);
+  // Make it very light by blending with white
+  return d3.rgb(
+    255 - (255 - rgb.r) * 0.15,
+    255 - (255 - rgb.g) * 0.15,
+    255 - (255 - rgb.b) * 0.15
+  ).toString();
 }
 
 /**
@@ -299,17 +459,20 @@ function renderWidget(
   const widget = document.createElement('div');
   widget.className = 'status-widget';
 
-  // Set conditional background color based on score
-  const backgroundColor = getBackgroundColor(state.aggregatedScore);
+  // Set conditional background color based on categories
+  const backgroundColor = getBackgroundColor(state.categories);
   widget.style.backgroundColor = backgroundColor;
 
   container.appendChild(widget);
 
-  // Add title
+  // Always add title element to maintain consistent height (use invisible placeholder if empty)
   const title = document.createElement('div');
   title.className = 'widget-title';
-  title.textContent = 'Health Score Status';
+  title.textContent = state.title || '\u00A0'; // Use non-breaking space to preserve height
   title.style.color = theme.textColor;
+  if (!state.title) {
+    title.style.opacity = '0'; // Make invisible but preserve space
+  }
   widget.appendChild(title);
 
   // Create content wrapper for categories and chart
@@ -327,7 +490,7 @@ function renderWidget(
 
   renderCategoriesList(listContainer, state, theme);
 
-  // Render chart SECOND (right side or top on mobile)
+  // Render chart SECOND (right side)
   const chartContainer = document.createElement('div');
   chartContainer.className = 'chart-section';
   contentWrapper.appendChild(chartContainer);
@@ -359,14 +522,14 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 
   const message = document.createElement('div');
   message.className = 'empty-state-message';
-  message.textContent = 'Add up to 3 numeric columns to the "Status Metrics" slot to get started.';
+  message.textContent = 'Add a Status Attribute and Record ID to get started.';
   emptyState.appendChild(message);
 
   container.appendChild(emptyState);
 }
 
 /**
- * Render the donut chart with center percentage
+ * Render the donut chart with center metric
  */
 function renderDonutChart(
   container: HTMLElement,
@@ -375,7 +538,6 @@ function renderDonutChart(
   containerWidth: number
 ): void {
   // Scale donut size based on container, optimized for horizontal layout
-  // At small sizes, donut should be smaller to fit alongside legend
   const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
   const radius = size / 2;
   const innerRadius = radius * 0.6;
@@ -489,17 +651,21 @@ function renderDonutChart(
       tooltip.style('opacity', 0);
     });
 
-  // Center text - aggregated score (perfectly centered)
+  // Center text - center metric (percentage or total)
+  const centerText = String(state.centerMetric);
+  const fontSize = centerText.includes('%') ? radius * 0.5 : radius * 0.4;
+
   g.append('text')
     .attr('class', 'center-score')
     .attr('text-anchor', 'middle')
     .attr('dominant-baseline', 'central')
     .attr('x', 0)
     .attr('y', 0)
-    .style('font-size', `${radius * 0.5}px`)
+    .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
+    .style('font-size', `${fontSize}px`)
     .style('font-weight', '700')
     .style('fill', theme.textColor)
-    .text(`${state.aggregatedScore}`);
+    .text(centerText);
 }
 
 /**
@@ -593,51 +759,53 @@ function handleCategoryClick(
   height: number
 ): void {
   // Toggle selection: if clicking same category, deselect it
-  const clickedValue = category.value as 'Healthy' | 'Warning' | 'Error';
+  const clickedValue = category.value!;
   const wasSelected = state.selectedCategory === clickedValue;
 
   // Update selection state
   state.selectedCategory = wasSelected ? null : clickedValue;
 
   // Recalculate based on selection
-  let filteredScores: number[];
-  let newAggregatedScore: number;
+  let filteredRecords: any[];
   let newTotal: number;
 
   if (state.selectedCategory) {
-    // Filter scores based on selected category
-    filteredScores = state.allScores.filter(score => {
-      const cat = categorizeScore(score);
-      return cat === state.selectedCategory;
-    });
-    newTotal = filteredScores.length;
-    newAggregatedScore = newTotal > 0
-      ? Math.round(filteredScores.reduce((sum, score) => sum + score, 0) / newTotal)
-      : 0;
+    // Filter records based on selected category
+    filteredRecords = state.allRecords.filter(record => record.statusValue === state.selectedCategory);
   } else {
     // Show all data
-    filteredScores = state.allScores;
-    newTotal = state.allScores.length;
-    newAggregatedScore = newTotal > 0
-      ? Math.round(filteredScores.reduce((sum, score) => sum + score, 0) / newTotal)
-      : 0;
+    filteredRecords = state.allRecords;
   }
 
-  // Update state
+  // Count unique records
+  const uniqueRecordIds = new Set(filteredRecords.map(r => r.recordId));
+  newTotal = uniqueRecordIds.size;
+
+  // Update state total
   state.total = newTotal;
-  state.aggregatedScore = newAggregatedScore;
 
   // Recalculate category counts based on filtered data
-  const newCounts = { 'Healthy': 0, 'Warning': 0, 'Error': 0 };
-  filteredScores.forEach(score => {
-    const cat = categorizeScore(score);
-    newCounts[cat]++;
+  const newCounts: Record<string, Set<string>> = {};
+  filteredRecords.forEach(record => {
+    if (!newCounts[record.statusValue]) {
+      newCounts[record.statusValue] = new Set();
+    }
+    newCounts[record.statusValue].add(record.recordId);
   });
 
   // Update category counts
   state.categories.forEach(cat => {
-    cat.count = newCounts[cat.value as 'Healthy' | 'Warning' | 'Error'];
+    cat.count = newCounts[cat.value!]?.size || 0;
   });
+
+  // Recalculate center metric
+  if (state.centerMetricValue && newCounts[state.centerMetricValue]) {
+    const count = newCounts[state.centerMetricValue].size;
+    const percentage = newTotal > 0 ? Math.round((count / newTotal) * 100) : 0;
+    state.centerMetric = `${percentage}%`;
+  } else {
+    state.centerMetric = newTotal;
+  }
 
   // Re-render the widget with updated state
   renderWidget(container, state, theme, width, height);
@@ -648,83 +816,28 @@ function handleCategoryClick(
     category: category.name,
     count: category.count,
     totalRecords: state.total,
-    aggregatedScore: state.aggregatedScore,
     isFiltered: state.selectedCategory !== null
   });
 
-  // Also send filter event to dashboard (only if category is selected, not deselected)
-  if (state.selectedCategory && state.measureSlot?.content && state.measureSlot.content.length > 0) {
-    const column = state.measureSlot.content[0];
-    let filters: ItemFilter[] = [];
-
-    // Determine the score range based on category
-    if (clickedValue === 'Healthy') {
-      filters = [{
-        expression: '? >= ?',
-        parameters: [
-          {
-            column_id: column.columnId,
-            dataset_id: column.datasetId
-          },
-          81
-        ],
-        properties: {
-          origin: 'filterFromVizItem',
-          type: 'where'
-        }
-      }];
-    } else if (clickedValue === 'Warning') {
-      // Filter for scores >= 51 AND <= 80 using two filters
-      filters = [
+  // Send filter event to dashboard (only if category is selected, not deselected)
+  if (state.selectedCategory && state.statusSlot?.content && state.statusSlot.content.length > 0) {
+    const column = state.statusSlot.content[0];
+    const filters: ItemFilter[] = [{
+      expression: '? = ?',
+      parameters: [
         {
-          expression: '? >= ?',
-          parameters: [
-            {
-              column_id: column.columnId,
-              dataset_id: column.datasetId
-            },
-            51
-          ],
-          properties: {
-            origin: 'filterFromVizItem',
-            type: 'where'
-          }
+          column_id: column.columnId,
+          dataset_id: column.datasetId
         },
-        {
-          expression: '? <= ?',
-          parameters: [
-            {
-              column_id: column.columnId,
-              dataset_id: column.datasetId
-            },
-            80
-          ],
-          properties: {
-            origin: 'filterFromVizItem',
-            type: 'where'
-          }
-        }
-      ];
-    } else if (clickedValue === 'Error') {
-      filters = [{
-        expression: '? < ?',
-        parameters: [
-          {
-            column_id: column.columnId,
-            dataset_id: column.datasetId
-          },
-          51
-        ],
-        properties: {
-          origin: 'filterFromVizItem',
-          type: 'where'
-        }
-      }];
-    }
+        clickedValue
+      ],
+      properties: {
+        origin: 'filterFromVizItem',
+        type: 'where'
+      }
+    }];
 
-    if (filters.length > 0) {
-      sendFilterEvent(filters);
-    }
+    sendFilterEvent(filters);
   } else if (!state.selectedCategory) {
     // Clear filter when deselected
     sendFilterEvent([]);
@@ -734,15 +847,12 @@ function handleCategoryClick(
 /**
  * Build query for data retrieval
  *
- * CRITICAL: We need ROW-LEVEL data (not aggregated) to count records in each health category
+ * CRITICAL: We need ROW-LEVEL data to count unique records per status value
  *
- * To get row-level data from Luzmo, we MUST have a dimension (like ID or timestamp)
- * Without a dimension, Luzmo will aggregate all measures into a single row!
- *
- * Example with ID dimension:
- * - Input: 1000 records with [ID, Score]
- * - Output: 1000 rows, each with a unique ID and its score
- * - We can then count: 800 Healthy, 150 Warning, 50 Error
+ * Query structure:
+ * - Dimension 1: Status Attribute (e.g., Status, State)
+ * - Dimension 2: Record ID (for unique counting)
+ * - Dimension 3 (optional): Center Metric value selector
  */
 export const buildQuery = ({
   slots = [],
@@ -751,37 +861,51 @@ export const buildQuery = ({
   slots: Slot[];
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
-  const measureSlot = slots.find(s => s.name === 'measure');
-  const categorySlot = slots.find(s => s.name === 'category');
+  const statusSlot = slots.find(s => s.name === 'category');
+  const recordIdSlot = slots.find(s => s.name === 'identifier');
+  const orderSlot = slots.find(s => s.name === 'measure');
+  const titleSlot = slots.find(s => s.name === 'legend');
 
-  if (!measureSlot?.content || measureSlot.content.length === 0) {
+  if (!statusSlot?.content || statusSlot.content.length === 0 ||
+      !recordIdSlot?.content || recordIdSlot.content.length === 0) {
     return {
       dimensions: [],
       measures: [],
-      limit: { by: 10000, offset: 0 }
+      order: []
     };
   }
 
-  const scoreColumn = measureSlot.content[0];
   const dimensions: any[] = [];
   const measures: any[] = [];
 
-  // Add the ID/dimension column if provided - THIS IS CRITICAL for row-level data
-  if (categorySlot?.content && categorySlot.content.length > 0) {
-    const idColumn = categorySlot.content[0];
+  // Add status attribute column as dimension
+  const statusColumn = statusSlot.content[0];
+  dimensions.push({
+    dataset_id: statusColumn.datasetId || (statusColumn as any).set,
+    column_id: statusColumn.columnId || (statusColumn as any).column,
+    level: statusColumn.level || 1
+  });
+
+  // Add record ID column as dimension
+  const recordIdColumn = recordIdSlot.content[0];
+  dimensions.push({
+    dataset_id: recordIdColumn.datasetId || (recordIdColumn as any).set,
+    column_id: recordIdColumn.columnId || (recordIdColumn as any).column,
+    level: recordIdColumn.level || 1
+  });
+
+  // Add order column as dimension if provided (NOT as measure)
+  // This way we get row-level data with the order value for each record
+  if (orderSlot?.content && orderSlot.content.length > 0) {
+    const orderColumn = orderSlot.content[0];
     dimensions.push({
-      dataset_id: idColumn.datasetId || (idColumn as any).set,
-      column_id: idColumn.columnId || (idColumn as any).column,
-      level: idColumn.level || 1
+      dataset_id: orderColumn.datasetId || (orderColumn as any).set,
+      column_id: orderColumn.columnId || (orderColumn as any).column,
+      level: 1
     });
   }
 
-  // Add the score column as a measure without aggregation
-  measures.push({
-    dataset_id: scoreColumn.datasetId || (scoreColumn as any).set,
-    column_id: scoreColumn.columnId || (scoreColumn as any).column,
-    // No aggregation - just return the raw values
-  });
+  // Note: Title slot is NOT added to query - we only use the column name from slot metadata
 
   return {
     dimensions,
