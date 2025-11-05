@@ -1,9 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?><!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<?xml version="1.0" encoding="utf-8"?>
 <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M21 21H3" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
-<path d="M4 16V14" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
-<path d="M12 12V9" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
-<path d="M8 16V10" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
-<path d="M16 13V11" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
-<path d="M20 15V5" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+<!-- Donut chart representing KPI status -->
+<circle cx="12" cy="12" r="8" stroke="#33363F" stroke-width="2" fill="none"/>
+<circle cx="12" cy="12" r="4.5" fill="white" stroke="#33363F" stroke-width="1.5"/>
+<!-- Segment indicators (3 segments like the component) -->
+<path d="M 12 4 A 8 8 0 0 1 19.8 9.5" stroke="#75BB43" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<path d="M 19.8 9.5 A 8 8 0 0 1 16.5 18.9" stroke="#BA1A1A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<path d="M 16.5 18.9 A 8 8 0 0 1 12 4" stroke="#FEC325" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<!-- Center percentage indicator -->
+<text x="12" y="13.5" text-anchor="middle" font-size="6" font-weight="700" fill="#33363F">%</text>
 </svg>

@@ -138,18 +138,27 @@ function sendCustomEvent(data: any): void {
 }
 
 /**
- * Assign colors to attribute values by position
- * Values are sorted alphabetically, then colors are assigned by index
- * Example: FALSE, TRUE -> FALSE=colors[0] (green), TRUE=colors[1] (red)
+ * Assign colors to attribute values
+ * If order column is provided: use order value as color index (0=Green, 1=Red, 2=Yellow)
+ * Otherwise: use position in sorted array (alphabetically)
  */
 function assignColors(
   uniqueValues: string[],
-  config: ComponentConfig
+  config: ComponentConfig,
+  statusOrders: Record<string, number>,
+  hasOrderColumn: boolean
 ): Record<string, string> {
   const colorMap: Record<string, string> = {};
 
   uniqueValues.forEach((value, index) => {
-    colorMap[value] = config.colors[index % config.colors.length];
+    if (hasOrderColumn && statusOrders[value] !== undefined) {
+      // Use the actual order value as color index
+      const orderValue = statusOrders[value];
+      colorMap[value] = config.colors[orderValue % config.colors.length];
+    } else {
+      // Use position-based indexing
+      colorMap[value] = config.colors[index % config.colors.length];
+    }
   });
 
   return colorMap;
@@ -311,7 +320,7 @@ function processData(
   }
 
   // Assign colors to status values using config
-  const colorMap = assignColors(uniqueStatusValues, config);
+  const colorMap = assignColors(uniqueStatusValues, config, statusOrders, hasOrderColumn);
 
   // Total unique records
   const allUniqueRecords = new Set(allRecords.map(r => r.recordId));
@@ -653,7 +662,7 @@ function renderDonutChart(
 
   // Center text - center metric (percentage or total)
   const centerText = String(state.centerMetric);
-  const fontSize = centerText.includes('%') ? radius * 0.5 : radius * 0.4;
+  const fontSize = centerText.includes('%') ? radius * 0.42 : radius * 0.35;
 
   g.append('text')
     .attr('class', 'center-score')
@@ -663,7 +672,7 @@ function renderDonutChart(
     .attr('y', 0)
     .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
     .style('font-size', `${fontSize}px`)
-    .style('font-weight', '700')
+    .style('font-weight', '300')
     .style('fill', theme.textColor)
     .text(centerText);
 }
