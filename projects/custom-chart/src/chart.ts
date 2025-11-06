@@ -26,6 +26,7 @@ interface ChartState {
   recordIdSlot?: Slot;
   orderSlot?: Slot;
   title?: string;
+  selectedCategory?: string | null;
 }
 
 interface ThemeContext {
@@ -88,6 +89,21 @@ function extractColumnLabel(column: any, language: string, fallback = 'Category'
 }
 
 /**
+ * Format title: remove underscores and capitalize first letter of each word
+ * Example: "TOTAL_DEVICES" -> "Total Devices"
+ */
+function formatTitle(title: string): string {
+  return title
+    .replace(/_/g, ' ')  // Replace underscores with spaces
+    .split(' ')           // Split into words
+    .map(word => {
+      if (word.length === 0) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+/**
  * Get background color for a given color
  */
 function getBackgroundColor(color: string): string {
@@ -142,7 +158,7 @@ function processData(
 
   // Extract title from title slot column name
   const customTitle = hasTitleColumn && titleSlot?.content?.[0]
-    ? extractColumnLabel(titleSlot.content[0], language, '')
+    ? formatTitle(extractColumnLabel(titleSlot.content[0], language, ''))
     : undefined;
 
   // Track count of unique records per category
@@ -253,7 +269,8 @@ function processData(
     categorySlot,
     recordIdSlot,
     orderSlot,
-    title: customTitle
+    title: customTitle,
+    selectedCategory: null
   };
 }
 
@@ -342,8 +359,18 @@ function renderWidget(
   state.items.forEach(item => {
     const card = document.createElement('div');
     card.className = 'alert-card';
-    card.style.backgroundColor = '#FFFFFF';
-    card.style.borderColor = '#E5E7EB';
+    card.style.backgroundColor = '#F9F9FC';
+
+    // Add selected state styling
+    if (state.selectedCategory === item.value) {
+      card.classList.add('alert-card-selected');
+      card.style.borderColor = item.color;
+      card.style.borderWidth = '3px';
+    } else {
+      card.style.borderColor = '#E5E7EB';
+      card.style.borderWidth = '1px';
+    }
+
     card.setAttribute('data-category', item.category);
 
     // Color indicator (left border)
@@ -375,7 +402,7 @@ function renderWidget(
 
     // Add click handler
     card.addEventListener('click', () => {
-      handleCardClick(item, state);
+      handleCardClick(item, state, container, theme, width, height);
     });
   });
 }
@@ -409,19 +436,37 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 /**
  * Handle card click for filtering
  */
-function handleCardClick(item: AlertItem, state: ChartState): void {
+function handleCardClick(
+  item: AlertItem,
+  state: ChartState,
+  container: HTMLElement,
+  theme: ThemeContext,
+  width: number,
+  height: number
+): void {
+  // Toggle selection: if clicking same category, deselect it
+  const clickedValue = item.value!;
+  const wasSelected = state.selectedCategory === clickedValue;
+
+  // Update selection state
+  state.selectedCategory = wasSelected ? null : clickedValue;
+
+  // Re-render the widget with updated state
+  renderWidget(container, state, theme, width, height);
+
   // Send custom event
   window.parent.postMessage({
     type: 'customEvent',
     data: {
       eventType: 'alertSelected',
       category: item.category,
-      count: item.count
+      count: item.count,
+      isFiltered: !wasSelected
     }
   }, '*');
 
-  // Send filter event
-  if (state.categorySlot?.content && state.categorySlot.content.length > 0) {
+  // Send filter event (only if category is selected, not deselected)
+  if (!wasSelected && state.categorySlot?.content && state.categorySlot.content.length > 0) {
     const column = state.categorySlot.content[0];
     const filters: ItemFilter[] = [{
       expression: '? = ?',
@@ -430,7 +475,7 @@ function handleCardClick(item: AlertItem, state: ChartState): void {
           column_id: column.columnId,
           dataset_id: column.datasetId
         },
-        item.value
+        clickedValue
       ],
       properties: {
         origin: 'filterFromVizItem',
@@ -439,6 +484,9 @@ function handleCardClick(item: AlertItem, state: ChartState): void {
     }];
 
     window.parent.postMessage({ type: 'setFilter', filters }, '*');
+  } else if (wasSelected) {
+    // Clear filter when deselected
+    window.parent.postMessage({ type: 'setFilter', filters: [] }, '*');
   }
 }
 
