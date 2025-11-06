@@ -470,8 +470,8 @@ function renderWidget(
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'widget-content';
 
-  // Determine layout based on aspect ratio: vertical if height < width, horizontal otherwise
-  if (height < width) {
+  // Determine layout based on aspect ratio: vertical if height > width, horizontal otherwise
+  if (height > width) {
     contentWrapper.classList.add('layout-vertical');
   }
 
@@ -537,9 +537,9 @@ function renderDonutChart(
   // Minimum 80px, maximum 260px for optimal display
   const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
 
-  // Dynamic stroke width: 20px base at 260px size, scales proportionally
+  // Dynamic stroke width: 20px base at 120px size, scales proportionally
   // Minimum 10px to prevent being too thin at small sizes
-  const strokeWidth = Math.max(Math.floor(size * 0.077), 10);
+  const strokeWidth = Math.max(Math.floor(size * 0.1667), 10);
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -654,9 +654,8 @@ function renderDonutChart(
     });
 
   // Center text - center metric (percentage or total)
-  // Increased font size to ensure "100%" fits perfectly in center
   const centerText = String(state.centerMetric);
-  const fontSize = centerText.includes('%') ? radius * 0.55 : radius * 0.45;
+  const fontSize = centerText.includes('%') ? radius * 0.48 : radius * 0.42;
 
   g.append('text')
     .attr('class', 'center-score')
