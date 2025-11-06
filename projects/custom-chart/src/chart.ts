@@ -408,38 +408,8 @@ export const resize = ({
   }
 };
 
-// Map specific colors to their background colors (uppercase for efficient matching)
-const BACKGROUND_COLOR_MAP: Record<string, string> = {
-  '#75BB43': '#DDF3CD', // Green -> light green
-  '#FEC325': '#FFEFD4', // Yellow -> light yellow
-  '#BA1A1A': '#FFE2E4', // Red -> light red
-};
-
-/**
- * Get background color based on the dominant category (highest count)
- */
-function getBackgroundColor(categories: StatusCategory[]): string {
-  if (categories.length === 0) return '#f3f4f6';
-
-  // Find category with highest count
-  const dominantCategory = categories.reduce((max, cat) =>
-    cat.count > max.count ? cat : max
-  , categories[0]);
-
-  // Return mapped background color or calculate a light version
-  const mappedColor = BACKGROUND_COLOR_MAP[dominantCategory.color];
-  if (mappedColor) {
-    return mappedColor;
-  }
-
-  // Fallback: blend with white for other colors
-  const rgbColor = d3.rgb(dominantCategory.color);
-  return d3.rgb(
-    255 - (255 - rgbColor.r) * 0.15,
-    255 - (255 - rgbColor.g) * 0.15,
-    255 - (255 - rgbColor.b) * 0.15
-  ).toString();
-}
+// Static background color for the widget
+const STATIC_BACKGROUND_COLOR = '#F9F9FC';
 
 /**
  * Main widget rendering function
@@ -462,13 +432,12 @@ function renderWidget(
     return;
   }
 
-  // Create main container with conditional background
+  // Create main container with static background
   const widget = document.createElement('div');
   widget.className = 'status-widget';
 
-  // Set conditional background color based on categories
-  const backgroundColor = getBackgroundColor(state.categories);
-  widget.style.backgroundColor = backgroundColor;
+  // Set static background color
+  widget.style.backgroundColor = STATIC_BACKGROUND_COLOR;
 
   container.appendChild(widget);
 
@@ -499,8 +468,8 @@ function renderWidget(
   chartContainer.className = 'chart-section';
   contentWrapper.appendChild(chartContainer);
 
-  // Donut takes about 45% of width for good balance
-  renderDonutChart(chartContainer, state, theme, width * 0.45);
+  // Render donut with fixed size (responsive to screen size)
+  renderDonutChart(chartContainer, state, theme, width, height);
 
   // Add click handlers for filtering
   addInteractionHandlers(container, state, theme, width, height);
@@ -534,17 +503,24 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 
 /**
  * Render the donut chart with center metric
+ * Standard size: 120x120px with 20px stroke
+ * Small screen: 80x80px with ~13px stroke
  */
 function renderDonutChart(
   container: HTMLElement,
   state: ChartState,
   theme: ThemeContext,
-  containerWidth: number
+  width: number,
+  height: number
 ): void {
-  // Scale donut size based on container, optimized for horizontal layout
-  const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
+  // Determine size based on container width for responsive behavior
+  // Standard: 120px, Small screens (< 600px): 80px
+  const isSmallScreen = width < 600;
+  const size = isSmallScreen ? 80 : 120;
+  const strokeWidth = isSmallScreen ? 13 : 20;
+
   const radius = size / 2;
-  const innerRadius = radius * 0.6;
+  const innerRadius = radius - strokeWidth;
 
   const svg = d3.select(container)
     .append('svg')

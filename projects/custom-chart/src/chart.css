@@ -10,7 +10,7 @@
   border-radius: 16px;
   overflow: visible;
   font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  /* Background color is set dynamically via inline style based on score */
+  /* Background color is set to static #F9F9FC */
 }
 
 /* Widget title */
@@ -224,7 +224,7 @@
   line-height: 1.5;
 }
 
-/* Adjustments for compact layouts (10x12 grid ~400-600px) */
+/* Responsive layout for smaller screens - switch to vertical */
 @media (max-width: 600px) {
   .status-widget {
     padding: 16px;
@@ -235,8 +235,33 @@
     margin-bottom: 12px;
   }
 
+  /* Switch to vertical layout: donut on top, legend below */
+  .widget-content {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    min-height: auto;
+  }
+
+  .widget-content .categories-section {
+    order: 2;
+    width: 100%;
+    padding-right: 0;
+    justify-content: center;
+  }
+
+  .widget-content .chart-section {
+    order: 1;
+    margin-right: 0;
+    padding: 0;
+  }
+
   .categories-list {
     gap: 12px;
+    max-width: 100%;
+    min-height: auto;
+    justify-content: center;
   }
 
   .category-count {
