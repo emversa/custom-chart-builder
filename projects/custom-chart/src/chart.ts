@@ -469,6 +469,12 @@ function renderWidget(
   // Create content wrapper for categories and chart
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'widget-content';
+
+  // Determine layout based on aspect ratio: vertical if height < width, horizontal otherwise
+  if (height < width) {
+    contentWrapper.classList.add('layout-vertical');
+  }
+
   widget.appendChild(contentWrapper);
 
   // Render categories list FIRST (left side)
@@ -519,7 +525,7 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 /**
  * Render the donut chart with center metric
  * Dynamic sizing: takes 45% of component width (scales with container)
- * Fixed stroke: 20px weight
+ * Dynamic stroke: 20px base, scales proportionally with size
  */
 function renderDonutChart(
   container: HTMLElement,
@@ -530,7 +536,10 @@ function renderDonutChart(
   // Scale donut size based on container width (45% of component)
   // Minimum 80px, maximum 260px for optimal display
   const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
-  const strokeWidth = 30; // Fixed 30px stroke weight
+
+  // Dynamic stroke width: 20px base at 260px size, scales proportionally
+  // Minimum 10px to prevent being too thin at small sizes
+  const strokeWidth = Math.max(Math.floor(size * 0.077), 10);
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;

@@ -224,57 +224,45 @@
   line-height: 1.5;
 }
 
-/* Responsive layout for smaller screens - switch to vertical */
-@media (max-width: 600px) {
-  .status-widget {
-    padding: 16px;
-  }
+/* Vertical layout - applied when height < width (aspect ratio check) */
+.widget-content.layout-vertical {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  min-height: auto;
+}
 
-  .widget-title {
-    font-size: 18px;
-    margin-bottom: 12px;
-  }
+.widget-content.layout-vertical .categories-section {
+  order: 2;
+  width: 100%;
+  padding-right: 0;
+  justify-content: center;
+}
 
-  /* Switch to vertical layout: donut on top, legend below */
-  .widget-content {
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 16px;
-    min-height: auto;
-  }
+.widget-content.layout-vertical .chart-section {
+  order: 1;
+  margin-right: 0;
+  padding: 0;
+}
 
-  .widget-content .categories-section {
-    order: 2;
-    width: 100%;
-    padding-right: 0;
-    justify-content: center;
-  }
+.widget-content.layout-vertical .categories-list {
+  gap: 12px;
+  max-width: 100%;
+  min-height: auto;
+  justify-content: center;
+}
 
-  .widget-content .chart-section {
-    order: 1;
-    margin-right: 0;
-    padding: 0;
-  }
+.widget-content.layout-vertical .category-count {
+  font-size: clamp(20px, 5vw, 24px);
+}
 
-  .categories-list {
-    gap: 12px;
-    max-width: 100%;
-    min-height: auto;
-    justify-content: center;
-  }
+.widget-content.layout-vertical .category-label {
+  font-size: clamp(11px, 2.5vw, 12px);
+}
 
-  .category-count {
-    font-size: 24px;
-  }
-
-  .category-label {
-    font-size: 12px;
-  }
-
-  .category-indicator {
-    height: 36px;
-  }
+.widget-content.layout-vertical .category-indicator {
+  height: clamp(32px, 5vh, 36px);
 }
 
 /* Responsive adjustments for very small screens */
