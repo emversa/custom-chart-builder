@@ -23,9 +23,8 @@ interface ChartState {
   total: number;
   centerMetric: number | string; // Percentage or total count for center display
   statusSlot?: Slot;
-  recordIdSlot?: Slot;
+  measureSlot?: Slot;
   orderSlot?: Slot;
-  allRecords: any[]; // Store all raw records for filtering
   selectedCategory?: string | null; // Track selected filter by attribute value
   centerMetricValue?: string; // The attribute value to show percentage for in center
   title?: string; // Title to display (optional - only shown if Title slot is filled)
@@ -190,17 +189,19 @@ function assignColors(
 
 /**
  * Process data from slots into StatusCategory array
+ * Uses server-side aggregated measure values
  *
  * LOGIC:
- * 1. Input: Multiple rows with [Status Attribute, Record ID]
- * 2. Count unique records per each status attribute value
- * 3. Legend shows: COUNT of unique records per attribute value
- * 4. Center shows: PERCENTAGE of selected attribute value OR total count
+ * 1. Input: Aggregated rows with [Status Attribute, Aggregated Measure Value, Order (optional)]
+ * 2. Read pre-aggregated values directly from server
+ * 3. Legend shows: Aggregated measure value per attribute
+ * 4. Center shows: PERCENTAGE of selected attribute value OR total
  *
- * Example: 1000 unique records
- *  - 600 records with Status="Active" → Active count = 600 (60%)
- *  - 400 records with Status="Not Active" → Not Active count = 400 (40%)
- *  - If center metric is set to "Active", center displays: 60%
+ * Example: Server returns 3 rows (already aggregated)
+ *  - ["Active", 60000, 0] → Active count = 60,000 (60%)
+ *  - ["Inactive", 40000, 1] → Inactive count = 40,000 (40%)
+ *  - ["Pending", 50000, 2] → Pending count = 50,000 (33%)
+ *  - If center metric is set to "Active", center displays: 40% (60k/150k)
  */
 function processData(
   data: ItemData['data'],
@@ -210,8 +211,8 @@ function processData(
   config: ComponentConfig = DEFAULT_CONFIG
 ): ChartState {
   const statusSlot = slots.find(s => s.name === 'category');
-  const recordIdSlot = slots.find(s => s.name === 'identifier');
-  const orderSlot = slots.find(s => s.name === 'measure');
+  const measureSlot = slots.find(s => s.name === 'measure');
+  const orderSlot = slots.find(s => s.name === 'order');
   const titleSlot = slots.find(s => s.name === 'legend');
 
   // Extract attribute column name from the slot content
@@ -219,11 +220,8 @@ function processData(
     ? extractColumnLabel(statusSlot.content[0], language, 'Attribute')
     : 'Attribute';
 
-  // Store all records for filtering
-  let allRecords: any[] = [];
-
-  // Track COUNT of unique records per status attribute value
-  const statusCounts: Record<string, Set<string>> = {};
+  // Track aggregated measure values per status attribute value
+  const statusMeasures: Record<string, number> = {};
 
   // Track order values for each status value
   const statusOrders: Record<string, number> = {};
@@ -234,24 +232,48 @@ function processData(
   // Check if title column is provided
   const hasTitleColumn = titleSlot?.content && titleSlot.content.length > 0;
 
-  // Process data
+  // Process data - data is already aggregated by server
   if (statusSlot?.content && statusSlot.content.length > 0 &&
-      recordIdSlot?.content && recordIdSlot.content.length > 0 &&
+      measureSlot?.content && measureSlot.content.length > 0 &&
       data && data.length > 0) {
 
-    // Data structure: [Status Value Object, Record ID Object, Order Value Object (optional)]
-    // Each item is an object with { id, name, color, order }
+    // Data structure when order column provided: [Status Object, Order Value, Measure Value]
+    // Data structure without order: [Status Object, Measure Value]
     data.forEach((row) => {
-      // Extract the actual value from the object structure
       const statusValueObj = row[0];
-      const recordIdObj = row[1];
-      const orderValueObj = hasOrderColumn ? row[2] : undefined;
 
-      // Get the id field which contains the actual value
-      const statusValue = String(statusValueObj?.id ?? statusValueObj ?? 'Unknown');
-      const recordId = String(recordIdObj?.id ?? recordIdObj);
+      // If order column is provided, dimensions come BEFORE measures
+      // So: [Dimension1_Status, Dimension2_Order, Measure]
+      const orderValueObj = hasOrderColumn ? row[1] : undefined;
+      const measureObj = hasOrderColumn ? row[2] : row[1];
 
-      // Extract order value - it can be a plain number or an object
+      // Extract display name from status object (use localized name if available)
+      let statusValue: string;
+      if (statusValueObj && typeof statusValueObj === 'object' && 'name' in statusValueObj) {
+        const nameObj = statusValueObj.name;
+        if (typeof nameObj === 'object' && nameObj !== null) {
+          // Use language-specific name, fallback to English, then first available
+          statusValue = String(nameObj[language] ?? nameObj.en ?? Object.values(nameObj)[0] ?? statusValueObj.id ?? 'Unknown');
+        } else {
+          statusValue = String(nameObj ?? statusValueObj.id ?? 'Unknown');
+        }
+      } else {
+        statusValue = String(statusValueObj?.id ?? statusValueObj ?? 'Unknown');
+      }
+
+      // Extract aggregated measure value
+      let measureValue = 0;
+      if (typeof measureObj === 'number') {
+        measureValue = measureObj;
+      } else if (typeof measureObj === 'object' && measureObj !== null && 'id' in measureObj) {
+        measureValue = Number(measureObj.id);
+      } else {
+        measureValue = Number(measureObj);
+      }
+
+      statusMeasures[statusValue] = measureValue;
+
+      // Extract order value if provided
       let orderValue: number | undefined = undefined;
       if (orderValueObj !== undefined && orderValueObj !== null) {
         if (typeof orderValueObj === 'number') {
@@ -263,17 +285,9 @@ function processData(
         }
       }
 
-      allRecords.push({ statusValue, recordId });
-
-      // Count unique record IDs per status value
-      if (!statusCounts[statusValue]) {
-        statusCounts[statusValue] = new Set();
-      }
-      statusCounts[statusValue].add(recordId);
-
       // Store order value if provided
       if (orderValue !== undefined && !isNaN(orderValue)) {
-        if (!statusOrders[statusValue] || orderValue < statusOrders[statusValue]) {
+        if (statusOrders[statusValue] === undefined || orderValue < statusOrders[statusValue]) {
           statusOrders[statusValue] = orderValue;
         }
       }
@@ -286,31 +300,13 @@ function processData(
     : undefined;
 
   // Fallback: sample data (demo)
-  if (allRecords.length === 0) {
-    const sampleData = [
-      { statusValue: 'Active', recordId: '1' },
-      { statusValue: 'Active', recordId: '2' },
-      { statusValue: 'Active', recordId: '3' },
-      { statusValue: 'Active', recordId: '4' },
-      { statusValue: 'Active', recordId: '5' },
-      { statusValue: 'Active', recordId: '6' },
-      { statusValue: 'Not Active', recordId: '7' },
-      { statusValue: 'Not Active', recordId: '8' },
-      { statusValue: 'Not Active', recordId: '9' },
-      { statusValue: 'Not Active', recordId: '10' },
-    ];
-
-    allRecords = sampleData;
-    sampleData.forEach(record => {
-      if (!statusCounts[record.statusValue]) {
-        statusCounts[record.statusValue] = new Set();
-      }
-      statusCounts[record.statusValue].add(record.recordId);
-    });
+  if (Object.keys(statusMeasures).length === 0) {
+    statusMeasures['Active'] = 6;
+    statusMeasures['Not Active'] = 4;
   }
 
   // Get unique status values and sort them
-  const uniqueStatusValues = Object.keys(statusCounts);
+  const uniqueStatusValues = Object.keys(statusMeasures);
 
   // Sort by order column if provided, otherwise alphabetically
   if (hasOrderColumn && Object.keys(statusOrders).length > 0) {
@@ -326,14 +322,13 @@ function processData(
   // Assign colors to status values using config
   const colorMap = assignColors(uniqueStatusValues, config, statusOrders, !!hasOrderColumn);
 
-  // Total unique records
-  const allUniqueRecords = new Set(allRecords.map(r => r.recordId));
-  const total = allUniqueRecords.size;
+  // Calculate total from aggregated measures
+  const total = uniqueStatusValues.reduce((sum, val) => sum + statusMeasures[val], 0);
 
   // Build categories array
   const categories: StatusCategory[] = uniqueStatusValues.map(statusValue => ({
     name: statusValue,
-    count: statusCounts[statusValue].size,
+    count: statusMeasures[statusValue],
     color: colorMap[statusValue],
     columnId: statusSlot?.content?.[0]?.columnId,
     datasetId: statusSlot?.content?.[0]?.datasetId,
@@ -361,7 +356,7 @@ function processData(
       centerIndex < uniqueStatusValues.length) {
 
     centerMetricValue = uniqueStatusValues[centerIndex];
-    const count = statusCounts[centerMetricValue].size;
+    const count = statusMeasures[centerMetricValue];
     const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
     centerMetric = `${percentage}%`;
   }
@@ -371,9 +366,8 @@ function processData(
     total,
     centerMetric,
     statusSlot,
-    recordIdSlot,
+    measureSlot,
     orderSlot,
-    allRecords,
     selectedCategory: null,
     centerMetricValue,
     title: customTitle,
@@ -750,7 +744,8 @@ function addInteractionHandlers(
 }
 
 /**
- * Handle category click for filtering and recalculation
+ * Handle category click for filtering
+ * Component display stays static - filtering only affects other dashboard components
  */
 function handleCategoryClick(
   category: StatusCategory,
@@ -767,49 +762,7 @@ function handleCategoryClick(
   // Update selection state
   state.selectedCategory = wasSelected ? null : clickedValue;
 
-  // Recalculate based on selection
-  let filteredRecords: any[];
-  let newTotal: number;
-
-  if (state.selectedCategory) {
-    // Filter records based on selected category
-    filteredRecords = state.allRecords.filter(record => record.statusValue === state.selectedCategory);
-  } else {
-    // Show all data
-    filteredRecords = state.allRecords;
-  }
-
-  // Count unique records
-  const uniqueRecordIds = new Set(filteredRecords.map(r => r.recordId));
-  newTotal = uniqueRecordIds.size;
-
-  // Update state total
-  state.total = newTotal;
-
-  // Recalculate category counts based on filtered data
-  const newCounts: Record<string, Set<string>> = {};
-  filteredRecords.forEach(record => {
-    if (!newCounts[record.statusValue]) {
-      newCounts[record.statusValue] = new Set();
-    }
-    newCounts[record.statusValue].add(record.recordId);
-  });
-
-  // Update category counts
-  state.categories.forEach(cat => {
-    cat.count = newCounts[cat.value!]?.size || 0;
-  });
-
-  // Recalculate center metric
-  if (state.centerMetricValue && newCounts[state.centerMetricValue]) {
-    const count = newCounts[state.centerMetricValue].size;
-    const percentage = newTotal > 0 ? Math.round((count / newTotal) * 100) : 0;
-    state.centerMetric = `${percentage}%`;
-  } else {
-    state.centerMetric = newTotal;
-  }
-
-  // Re-render the widget with updated state
+  // Re-render the widget to update selection highlighting
   renderWidget(container, state, theme, width, height);
 
   // Send custom event
@@ -848,13 +801,12 @@ function handleCategoryClick(
 
 /**
  * Build query for data retrieval
- *
- * CRITICAL: We need ROW-LEVEL data to count unique records per status value
+ * Uses server-side aggregation for measures
  *
  * Query structure:
- * - Dimension 1: Status Attribute (e.g., Status, State)
- * - Dimension 2: Record ID (for unique counting)
- * - Dimension 3 (optional): Center Metric value selector
+ * - Dimension 1: Status Attribute (e.g., Status, State) - GROUP BY
+ * - Measure 1: Aggregated metric (e.g., COUNT, SUM, AVG) - server aggregates
+ * - Dimension 2 (optional): Order column - for sorting and color assignment
  */
 export const buildQuery = ({
   slots = [],
@@ -864,11 +816,11 @@ export const buildQuery = ({
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
   const statusSlot = slots.find(s => s.name === 'category');
-  const recordIdSlot = slots.find(s => s.name === 'identifier');
-  const orderSlot = slots.find(s => s.name === 'measure');
+  const measureSlot = slots.find(s => s.name === 'measure');
+  const orderSlot = slots.find(s => s.name === 'order');
 
   if (!statusSlot?.content || statusSlot.content.length === 0 ||
-      !recordIdSlot?.content || recordIdSlot.content.length === 0) {
+      !measureSlot?.content || measureSlot.content.length === 0) {
     return {
       dimensions: [],
       measures: [],
@@ -879,7 +831,7 @@ export const buildQuery = ({
   const dimensions: any[] = [];
   const measures: any[] = [];
 
-  // Add status attribute column as dimension
+  // Add status attribute column as dimension (GROUP BY)
   const statusColumn = statusSlot.content[0];
   dimensions.push({
     dataset_id: statusColumn.datasetId || (statusColumn as any).set,
@@ -887,16 +839,21 @@ export const buildQuery = ({
     level: statusColumn.level || 1
   });
 
-  // Add record ID column as dimension
-  const recordIdColumn = recordIdSlot.content[0];
-  dimensions.push({
-    dataset_id: recordIdColumn.datasetId || (recordIdColumn as any).set,
-    column_id: recordIdColumn.columnId || (recordIdColumn as any).column,
-    level: recordIdColumn.level || 1
-  });
+  // Add measure column as measure with aggregation
+  const measureColumn = measureSlot.content[0];
+  const measureDef: any = {
+    dataset_id: measureColumn.datasetId || (measureColumn as any).set,
+    column_id: measureColumn.columnId || (measureColumn as any).column
+  };
 
-  // Add order column as dimension if provided (NOT as measure)
-  // This way we get row-level data with the order value for each record
+  // Add aggregation if specified
+  if (measureColumn.aggregationFunc && ['sum', 'average', 'min', 'max', 'count'].includes(measureColumn.aggregationFunc)) {
+    measureDef.aggregation = { type: measureColumn.aggregationFunc };
+  }
+
+  measures.push(measureDef);
+
+  // Add order column as dimension if provided (for grouping)
   if (orderSlot?.content && orderSlot.content.length > 0) {
     const orderColumn = orderSlot.content[0];
     dimensions.push({
@@ -912,6 +869,5 @@ export const buildQuery = ({
     dimensions,
     measures,
     order: []
-    // No limit - process all records
   };
 };
