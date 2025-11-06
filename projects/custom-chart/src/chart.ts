@@ -17,6 +17,8 @@ interface AlertItem {
   datasetId?: string;
   value?: string;
   order?: number;
+  percentage?: number;
+  textColor?: string;
 }
 
 interface ChartState {
@@ -111,6 +113,21 @@ function getBackgroundColor(color: string): string {
 }
 
 /**
+ * Get conditional colors based on percentage
+ * Returns {backgroundColor, textColor} based on percentage ranges
+ */
+function getConditionalColors(percentage: number): { backgroundColor: string; textColor: string } {
+  if (percentage >= 0 && percentage < 20) {
+    return { backgroundColor: '#E6F6DA', textColor: '#245100' };
+  } else if (percentage >= 20 && percentage <= 51) {
+    return { backgroundColor: '#FFF3DF', textColor: '#785A00' };
+  } else {
+    // 52-100%
+    return { backgroundColor: '#FFEAEB', textColor: '#690005' };
+  }
+}
+
+/**
  * Resolve theme from options
  */
 function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
@@ -141,6 +158,7 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
 
 /**
  * Process data from slots into AlertItem array
+ * For single card component - returns only the first category
  */
 function processData(
   data: ItemData['data'],
@@ -217,51 +235,61 @@ function processData(
     uniqueCategories.sort();
   }
 
-  // Build items array
-  const items: AlertItem[] = uniqueCategories.map((categoryValue, index) => {
-    let color: string;
+  // Calculate total count across ALL categories
+  const totalCount = uniqueCategories.reduce((sum, cat) => sum + categoryCounts[cat].size, 0);
 
+  // Build items array - ONLY TAKE THE FIRST CATEGORY
+  const items: AlertItem[] = [];
+
+  if (uniqueCategories.length > 0) {
+    const categoryValue = uniqueCategories[0]; // Only first category
+    const categoryCount = categoryCounts[categoryValue].size;
+
+    // Calculate percentage of total
+    const percentage = totalCount > 0 ? (categoryCount / totalCount) * 100 : 0;
+
+    // Get conditional colors based on percentage
+    const conditionalColors = getConditionalColors(percentage);
+
+    let color: string;
     if (hasOrderColumn && categoryOrders[categoryValue] !== undefined) {
       const orderValue = categoryOrders[categoryValue];
       color = theme.colors[orderValue % theme.colors.length];
     } else {
-      color = theme.colors[index % theme.colors.length];
+      color = theme.colors[0]; // Use first color
     }
 
-    return {
+    items.push({
       category: categoryValue,
-      count: categoryCounts[categoryValue].size,
+      count: categoryCount,
       color: color,
-      backgroundColor: getBackgroundColor(color),
+      backgroundColor: conditionalColors.backgroundColor,
+      textColor: conditionalColors.textColor,
       columnId: categorySlot?.content?.[0]?.columnId,
       datasetId: categorySlot?.content?.[0]?.datasetId,
       value: categoryValue,
-      order: categoryOrders[categoryValue] ?? index
-    };
-  });
+      order: categoryOrders[categoryValue] ?? 0,
+      percentage: percentage
+    });
+  }
 
-  // Fallback: sample data
+  // Fallback: sample data (single item)
   if (items.length === 0) {
-    const sampleItems = [
-      { category: 'Critical Issues', count: 3, order: 0 },
-      { category: 'Warnings', count: 5, order: 1 },
-      { category: 'Info', count: 2, order: 2 },
-    ];
-
-    sampleItems.forEach((sample) => {
-      const color = theme.colors[sample.order % theme.colors.length];
-      items.push({
-        category: sample.category,
-        count: sample.count,
-        color,
-        backgroundColor: getBackgroundColor(color),
-        order: sample.order
-      });
+    const color = theme.colors[0];
+    const conditionalColors = getConditionalColors(50); // Default to 50% for sample
+    items.push({
+      category: 'Critical Issues',
+      count: 3,
+      color,
+      backgroundColor: conditionalColors.backgroundColor,
+      textColor: conditionalColors.textColor,
+      order: 0,
+      percentage: 50
     });
   }
 
   // Calculate total
-  const total = items.reduce((sum, item) => sum + item.count, 0);
+  const total = totalCount;
 
   return {
     items,
@@ -317,7 +345,7 @@ export const resize = ({
 };
 
 /**
- * Main widget rendering function
+ * Main widget rendering function - Single card layout
  */
 function renderWidget(
   container: HTMLElement,
@@ -337,7 +365,7 @@ function renderWidget(
 
   // Create main container
   const widget = document.createElement('div');
-  widget.className = 'alert-widget';
+  widget.className = 'alert-widget-single';
   container.appendChild(widget);
 
   // Title (optional)
@@ -350,60 +378,69 @@ function renderWidget(
   }
   widget.appendChild(title);
 
-  // Alert list
-  const list = document.createElement('div');
-  list.className = 'alert-list';
-  widget.appendChild(list);
+  // Single card container
+  const cardContainer = document.createElement('div');
+  cardContainer.className = 'alert-card-container';
+  widget.appendChild(cardContainer);
 
-  // Render alert items
-  state.items.forEach(item => {
-    const card = document.createElement('div');
-    card.className = 'alert-card';
-    card.style.backgroundColor = '#F9F9FC';
+  // Render the single alert item
+  const item = state.items[0];
+  const card = document.createElement('div');
+  card.className = 'alert-card';
 
-    // Add selected state styling
-    if (state.selectedCategory === item.value) {
-      card.classList.add('alert-card-selected');
-      card.style.borderColor = item.color;
-      card.style.borderWidth = '3px';
-    } else {
-      card.style.borderColor = '#E5E7EB';
-      card.style.borderWidth = '1px';
-    }
+  // Determine layout based on dimensions
+  // Horizontal (stacked) layout when height >= width
+  // Vertical (side-by-side) layout when height < width
+  const isHorizontalLayout = height >= width;
+  if (isHorizontalLayout) {
+    card.classList.add('alert-card-horizontal');
+  }
 
-    card.setAttribute('data-category', item.category);
+  // Use conditional background color
+  card.style.backgroundColor = item.backgroundColor;
 
-    // Color indicator (left border)
-    const indicator = document.createElement('div');
-    indicator.className = 'alert-indicator';
-    indicator.style.backgroundColor = item.color;
-    card.appendChild(indicator);
+  // Add selected state styling
+  if (state.selectedCategory === item.value) {
+    card.classList.add('alert-card-selected');
+    card.style.borderColor = item.textColor || item.color;
+    card.style.borderWidth = '2px';
+  } else {
+    card.style.borderColor = item.backgroundColor;
+    card.style.borderWidth = '1px';
+  }
 
-    // Content container
-    const content = document.createElement('div');
-    content.className = 'alert-content';
+  card.setAttribute('data-category', item.category);
 
-    // Count
-    const count = document.createElement('div');
-    count.className = 'alert-count';
-    count.style.color = theme.textColor;
-    count.textContent = item.count.toLocaleString();
-    content.appendChild(count);
+  // Color indicator (left border) - use text color for indicator
+  const indicator = document.createElement('div');
+  indicator.className = 'alert-indicator';
+  indicator.style.backgroundColor = item.textColor || item.color;
+  card.appendChild(indicator);
 
-    // Description
-    const description = document.createElement('div');
-    description.className = 'alert-description';
-    description.style.color = '#6B7280';
-    description.textContent = item.category;
-    content.appendChild(description);
+  // Content container
+  const content = document.createElement('div');
+  content.className = 'alert-content';
 
-    card.appendChild(content);
-    list.appendChild(card);
+  // Count - use conditional text color
+  const count = document.createElement('div');
+  count.className = 'alert-count';
+  count.style.color = item.textColor || theme.textColor;
+  count.textContent = item.count.toLocaleString();
+  content.appendChild(count);
 
-    // Add click handler
-    card.addEventListener('click', () => {
-      handleCardClick(item, state, container, theme, width, height);
-    });
+  // Description
+  const description = document.createElement('div');
+  description.className = 'alert-description';
+  description.style.color = '#6B7280';
+  description.textContent = item.category;
+  content.appendChild(description);
+
+  card.appendChild(content);
+  cardContainer.appendChild(card);
+
+  // Add click handler for filtering
+  card.addEventListener('click', () => {
+    handleCardClick(item, state, container, theme, width, height);
   });
 }
 

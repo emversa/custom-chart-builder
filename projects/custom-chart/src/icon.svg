@@ -1,21 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<!-- Alert list with stacked cards -->
-<!-- Card 1 - Critical (Red) -->
-<rect x="4" y="4" width="16" height="4" rx="1" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="0.5"/>
-<rect x="4" y="4" width="1" height="4" rx="0.5" fill="#BA1A1A"/>
-<text x="7" y="6.8" font-size="2" font-weight="700" fill="#1f2937">5</text>
-<text x="10" y="7" font-size="1.5" fill="#6B7280">Critical</text>
-
-<!-- Card 2 - Warning (Yellow) -->
-<rect x="4" y="10" width="16" height="4" rx="1" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="0.5"/>
-<rect x="4" y="10" width="1" height="4" rx="0.5" fill="#FEC325"/>
-<text x="7" y="12.8" font-size="2" font-weight="700" fill="#1f2937">8</text>
-<text x="10" y="13" font-size="1.5" fill="#6B7280">Warnings</text>
-
-<!-- Card 3 - Info (Green) -->
-<rect x="4" y="16" width="16" height="4" rx="1" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="0.5"/>
-<rect x="4" y="16" width="1" height="4" rx="0.5" fill="#75BB43"/>
-<text x="7" y="18.8" font-size="2" font-weight="700" fill="#1f2937">3</text>
-<text x="10" y="19" font-size="1.5" fill="#6B7280">Info</text>
+<!-- Single KPI Card -->
+<!-- Card background with conditional color -->
+<rect x="3" y="6" width="18" height="12" rx="1.5" fill="#FFEAEB" stroke="#E5E7EB" stroke-width="0.5"/>
+<!-- Left indicator bar -->
+<rect x="3" y="6" width="1.2" height="12" rx="0.5" fill="#245100"/>
+<!-- Large count number centered -->
+<text x="12" y="13" font-size="5" font-weight="300" fill="#245100" text-anchor="middle">12</text>
+<!-- Category label below -->
+<text x="12" y="16.5" font-size="1.8" fill="#6B7280" text-anchor="middle">Critical</text>
 </svg>
