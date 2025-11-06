@@ -165,8 +165,105 @@
   line-height: 1.5;
 }
 
-/* Responsive font sizing based on container */
-@container (max-width: 300px) {
+/* Responsive sizing based on container */
+
+/* Very small sizes (under 180px) */
+@container (max-width: 180px) {
+  .alert-widget-single {
+    padding: 8px;
+  }
+
+  .alert-title {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  .alert-count {
+    font-size: 20px;
+  }
+
+  .alert-card-horizontal .alert-count {
+    font-size: 24px;
+  }
+
+  .alert-description {
+    font-size: 11px;
+  }
+
+  .alert-card {
+    padding: 10px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+
+  .alert-content {
+    gap: 10px;
+    padding-left: 8px;
+  }
+
+  .alert-card-horizontal .alert-content {
+    gap: 6px;
+  }
+
+  .alert-indicator {
+    width: 4px;
+  }
+}
+
+/* Small sizes (180px - 250px) */
+@container (min-width: 181px) and (max-width: 250px) {
+  .alert-widget-single {
+    padding: 10px;
+  }
+
+  .alert-title {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .alert-count {
+    font-size: 24px;
+  }
+
+  .alert-card-horizontal .alert-count {
+    font-size: 28px;
+  }
+
+  .alert-description {
+    font-size: 12px;
+  }
+
+  .alert-card {
+    padding: 12px;
+    gap: 8px;
+    border-radius: 10px;
+  }
+
+  .alert-content {
+    gap: 12px;
+    padding-left: 10px;
+  }
+
+  .alert-card-horizontal .alert-content {
+    gap: 8px;
+  }
+
+  .alert-indicator {
+    width: 5px;
+  }
+}
+
+/* Medium-small sizes (251px - 300px) */
+@container (min-width: 251px) and (max-width: 300px) {
+  .alert-widget-single {
+    padding: 12px;
+  }
+
+  .alert-title {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+
   .alert-count {
     font-size: 28px;
   }
@@ -176,11 +273,35 @@
   }
 
   .alert-description {
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .alert-card {
-    padding: 16px;
-    gap: 12px;
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .alert-content {
+    gap: 14px;
+    padding-left: 12px;
+  }
+
+  .alert-card-horizontal .alert-content {
+    gap: 10px;
+  }
+}
+
+/* Compact sizes (301px - 400px) */
+@container (min-width: 301px) and (max-width: 400px) {
+  .alert-count {
+    font-size: 36px;
+  }
+
+  .alert-card-horizontal .alert-count {
+    font-size: 40px;
+  }
+
+  .alert-description {
+    font-size: 15px;
   }
 }
