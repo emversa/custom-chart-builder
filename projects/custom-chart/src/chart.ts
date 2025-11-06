@@ -6,30 +6,26 @@ import type {
   Slot,
   SlotConfig
 } from '@luzmo/dashboard-contents-types';
-import * as d3 from 'd3';
 
 // Data structures
-interface StatusCategory {
-  name: string;
+interface AlertItem {
+  category: string;
   count: number;
   color: string;
+  backgroundColor: string;
   columnId?: string;
   datasetId?: string;
-  value?: string; // Actual attribute value (e.g., "Active", "Offline")
+  value?: string;
+  order?: number;
 }
 
 interface ChartState {
-  categories: StatusCategory[];
+  items: AlertItem[];
   total: number;
-  centerMetric: number | string; // Percentage or total count for center display
-  statusSlot?: Slot;
+  categorySlot?: Slot;
   recordIdSlot?: Slot;
   orderSlot?: Slot;
-  allRecords: any[]; // Store all raw records for filtering
-  selectedCategory?: string | null; // Track selected filter by attribute value
-  centerMetricValue?: string; // The attribute value to show percentage for in center
-  title?: string; // Title to display (optional - only shown if Title slot is filled)
-  attributeName: string; // Name of the attribute column
+  title?: string;
 }
 
 interface ThemeContext {
@@ -50,82 +46,35 @@ interface ChartParams {
   dimensions: { width: number; height: number };
 }
 
-// Configuration options
-interface ComponentConfig {
-  title: string;
-  colors: string[]; // Color palette assigned by position (1st value, 2nd value, 3rd value, etc.)
-  centerMetricIndex: number | null; // Which value position (0-based) to show as % in center. null = show total count
-}
+// Default color configuration
+// Order determines severity: 0=Critical (Red), 1=Warning (Yellow), 2=Info (Green), etc.
+const DEFAULT_COLORS: string[] = [
+  '#BA1A1A', // 0 = Critical (Red)
+  '#FEC325', // 1 = Warning (Yellow)
+  '#75BB43', // 2 = Info/Success (Green)
+  '#3b82f6', // 3 = Info (Blue)
+  '#8b5cf6', // 4 = Purple
+  '#ec4899', // 5 = Pink
+  '#06b6d4', // 6 = Cyan
+  '#84cc16', // 7 = Lime
+];
 
-// Default configuration
-const DEFAULT_CONFIG: ComponentConfig = {
-  title: 'KPI Status',
-  // Colors assigned by position to attribute values (sorted alphabetically)
-  //
-  // IMPORTANT: Attribute values are sorted ALPHABETICALLY before color assignment
-  // Examples:
-  //   TRUE/FALSE -> FALSE=1st (index 0), TRUE=2nd (index 1)
-  //   Active/Inactive -> Active=1st (index 0), Inactive=2nd (index 1)
-  //   Online/Offline -> Offline=1st (index 0), Online=2nd (index 1)
-  //
-  // To show TRUE as green and FALSE as red, swap first two colors:
-  //   colors: ['#BA1A1A', '#75BB43', ...]  <- FALSE=Red, TRUE=Green
-  //
-  colors: [
-    '#75BB43', // 1st value (alphabetically, index 0) - Green
-    '#BA1A1A', // 2nd value (index 1) - Red
-    '#FEC325', // 3rd value (index 2) - Yellow (FIXED HEX)
-    '#3b82f6', // 4th value (index 3) - Blue
-    '#8b5cf6', // 5th value (index 4) - Purple
-    '#ec4899', // 6th value (index 5) - Pink
-    '#06b6d4', // 7th value (index 6) - Cyan
-    '#84cc16', // 8th value (index 7) - Lime
-  ],
-
-  // Center Metric Configuration (used when Order column is NOT provided):
-  // null = show total count
-  // 0 = show percentage of 1st value (alphabetically)
-  // 1 = show percentage of 2nd value (alphabetically)
-  // NOTE: If Order column IS provided, the value with order=0 is always shown as %
-  centerMetricIndex: 1  // Show 2nd value percentage (TRUE for TRUE/FALSE without Order column)
+// Map colors to light background colors
+const BACKGROUND_COLOR_MAP: Record<string, string> = {
+  '#BA1A1A': '#FFE2E4', // Red -> light red
+  '#FEC325': '#FFEFD4', // Yellow -> light yellow
+  '#75BB43': '#DDF3CD', // Green -> light green
+  '#3b82f6': '#E0EFFF', // Blue -> light blue
+  '#8b5cf6': '#F3E8FF', // Purple -> light purple
+  '#ec4899': '#FCE7F3', // Pink -> light pink
+  '#06b6d4': '#CFFAFE', // Cyan -> light cyan
+  '#84cc16': '#ECFCCB', // Lime -> light lime
 };
 
-// Helper functions
-function toRgb(color?: string, fallback = '#ffffff'): d3.RGBColor {
-  const parsed = d3.color(color ?? fallback) ?? d3.color(fallback);
-  return d3.rgb(parsed?.toString() ?? fallback);
-}
-
-function getRelativeLuminance(color: d3.RGBColor): number {
-  const normalize = (value: number) => {
-    const channel = value / 255;
-    return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
-  };
-  return 0.2126 * normalize(color.r) + 0.7152 * normalize(color.g) + 0.0722 * normalize(color.b);
-}
-
-function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
-  const backgroundColor = theme?.itemsBackground || '#ffffff';
-  const backgroundRgb = toRgb(backgroundColor);
-  const luminance = getRelativeLuminance(backgroundRgb);
-  const textColor = luminance < 0.45 ? '#f8fafc' : '#1f2937';
-
-  const fontFamily = theme?.font?.fontFamily ||
-    'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
-
-  return {
-    backgroundColor,
-    textColor,
-    fontFamily,
-    mainColor: (theme as any)?.mainColor || '#6366f1',
-    colors: DEFAULT_CONFIG.colors
-  };
-}
-
 /**
- * Extract column label from slot content
+ * Helper function to extract column label
  */
-function extractColumnLabel(column: any, language: string, fallback = 'Attribute'): string {
+function extractColumnLabel(column: any, language: string, fallback = 'Category'): string {
   if (typeof column.label === 'object' && column.label !== null) {
     return column.label.en || column.label[language] || Object.values(column.label)[0] || fallback;
   }
@@ -138,236 +87,178 @@ function extractColumnLabel(column: any, language: string, fallback = 'Attribute
   return fallback;
 }
 
-function sendFilterEvent(filters: ItemFilter[]): void {
-  window.parent.postMessage({ type: 'setFilter', filters }, '*');
-}
-
-function sendCustomEvent(data: any): void {
-  window.parent.postMessage({ type: 'customEvent', data }, '*');
+/**
+ * Get background color for a given color
+ */
+function getBackgroundColor(color: string): string {
+  return BACKGROUND_COLOR_MAP[color] || '#F3F4F6';
 }
 
 /**
- * Assign colors to attribute values
- * If order column is provided: use order value as color index (0=Green, 1=Red, 2=Yellow)
- * Otherwise: use position in sorted array (alphabetically)
+ * Resolve theme from options
  */
-function assignColors(
-  uniqueValues: string[],
-  config: ComponentConfig,
-  statusOrders: Record<string, number>,
-  hasOrderColumn: boolean
-): Record<string, string> {
-  const colorMap: Record<string, string> = {};
+function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
+  const backgroundColor = theme?.itemsBackground || '#ffffff';
 
-  uniqueValues.forEach((value, index) => {
-    if (hasOrderColumn && statusOrders[value] !== undefined) {
-      // Use the actual order value as color index
-      const orderValue = statusOrders[value];
-      colorMap[value] = config.colors[orderValue % config.colors.length];
-    } else {
-      // Use position-based indexing
-      colorMap[value] = config.colors[index % config.colors.length];
-    }
-  });
-
-  return colorMap;
-}
-
-/**
- * Process data from slots into StatusCategory array
- *
- * LOGIC:
- * 1. Input: Multiple rows with [Status Attribute, Record ID]
- * 2. Count unique records per each status attribute value
- * 3. Legend shows: COUNT of unique records per attribute value
- * 4. Center shows: PERCENTAGE of selected attribute value OR total count
- *
- * Example: 1000 unique records
- *  - 600 records with Status="Active" → Active count = 600 (60%)
- *  - 400 records with Status="Not Active" → Not Active count = 400 (40%)
- *  - If center metric is set to "Active", center displays: 60%
- */
-function processData(
-  data: ItemData['data'],
-  slots: Slot[],
-  colors: string[],
-  language: string,
-  config: ComponentConfig = DEFAULT_CONFIG
-): ChartState {
-  const statusSlot = slots.find(s => s.name === 'category');
-  const recordIdSlot = slots.find(s => s.name === 'identifier');
-  const orderSlot = slots.find(s => s.name === 'measure');
-  const titleSlot = slots.find(s => s.name === 'legend');
-
-  // Extract attribute column name from the slot content
-  const attributeName = statusSlot?.content?.[0]
-    ? extractColumnLabel(statusSlot.content[0], language, 'Attribute')
-    : 'Attribute';
-
-  // Store all records for filtering
-  let allRecords: any[] = [];
-
-  // Track COUNT of unique records per status attribute value
-  const statusCounts: Record<string, Set<string>> = {};
-
-  // Track order values for each status value
-  const statusOrders: Record<string, number> = {};
-
-  // Check if order column is provided
-  const hasOrderColumn = orderSlot?.content && orderSlot.content.length > 0;
-
-  // Check if title column is provided
-  const hasTitleColumn = titleSlot?.content && titleSlot.content.length > 0;
-
-  // Process data
-  if (statusSlot?.content && statusSlot.content.length > 0 &&
-      recordIdSlot?.content && recordIdSlot.content.length > 0 &&
-      data && data.length > 0) {
-
-    // Data structure: [Status Value Object, Record ID Object, Order Value Object (optional)]
-    // Each item is an object with { id, name, color, order }
-    data.forEach((row) => {
-      // Extract the actual value from the object structure
-      const statusValueObj = row[0];
-      const recordIdObj = row[1];
-      const orderValueObj = hasOrderColumn ? row[2] : undefined;
-
-      // Get the id field which contains the actual value
-      const statusValue = String(statusValueObj?.id ?? statusValueObj ?? 'Unknown');
-      const recordId = String(recordIdObj?.id ?? recordIdObj);
-
-      // Extract order value - it can be a plain number or an object
-      let orderValue: number | undefined = undefined;
-      if (orderValueObj !== undefined && orderValueObj !== null) {
-        if (typeof orderValueObj === 'number') {
-          orderValue = orderValueObj;
-        } else if (typeof orderValueObj === 'object' && 'id' in orderValueObj) {
-          orderValue = Number(orderValueObj.id);
-        } else {
-          orderValue = Number(orderValueObj);
-        }
-      }
-
-      allRecords.push({ statusValue, recordId });
-
-      // Count unique record IDs per status value
-      if (!statusCounts[statusValue]) {
-        statusCounts[statusValue] = new Set();
-      }
-      statusCounts[statusValue].add(recordId);
-
-      // Store order value if provided
-      if (orderValue !== undefined && !isNaN(orderValue)) {
-        if (!statusOrders[statusValue] || orderValue < statusOrders[statusValue]) {
-          statusOrders[statusValue] = orderValue;
-        }
-      }
-    });
+  // Simple luminance check for text color
+  const rgb = backgroundColor.match(/\w\w/g);
+  let textColor = '#1f2937';
+  if (rgb) {
+    const r = parseInt(rgb[0], 16);
+    const g = parseInt(rgb[1], 16);
+    const b = parseInt(rgb[2], 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    textColor = luminance < 0.5 ? '#f8fafc' : '#1f2937';
   }
 
-  // Extract title from title slot column name only if provided
-  const customTitle = hasTitleColumn && titleSlot?.content?.[0]
-    ? extractColumnLabel(titleSlot.content[0], language, '')
-    : undefined;
-
-  // Fallback: sample data (demo)
-  if (allRecords.length === 0) {
-    const sampleData = [
-      { statusValue: 'Active', recordId: '1' },
-      { statusValue: 'Active', recordId: '2' },
-      { statusValue: 'Active', recordId: '3' },
-      { statusValue: 'Active', recordId: '4' },
-      { statusValue: 'Active', recordId: '5' },
-      { statusValue: 'Active', recordId: '6' },
-      { statusValue: 'Not Active', recordId: '7' },
-      { statusValue: 'Not Active', recordId: '8' },
-      { statusValue: 'Not Active', recordId: '9' },
-      { statusValue: 'Not Active', recordId: '10' },
-    ];
-
-    allRecords = sampleData;
-    sampleData.forEach(record => {
-      if (!statusCounts[record.statusValue]) {
-        statusCounts[record.statusValue] = new Set();
-      }
-      statusCounts[record.statusValue].add(record.recordId);
-    });
-  }
-
-  // Get unique status values and sort them
-  const uniqueStatusValues = Object.keys(statusCounts);
-
-  // Sort by order column if provided, otherwise alphabetically
-  if (hasOrderColumn && Object.keys(statusOrders).length > 0) {
-    uniqueStatusValues.sort((a, b) => {
-      const orderA = statusOrders[a] ?? 999;
-      const orderB = statusOrders[b] ?? 999;
-      return orderA - orderB;
-    });
-  } else {
-    uniqueStatusValues.sort();
-  }
-
-  // Assign colors to status values using config
-  const colorMap = assignColors(uniqueStatusValues, config, statusOrders, !!hasOrderColumn);
-
-  // Total unique records
-  const allUniqueRecords = new Set(allRecords.map(r => r.recordId));
-  const total = allUniqueRecords.size;
-
-  // Build categories array
-  const categories: StatusCategory[] = uniqueStatusValues.map(statusValue => ({
-    name: statusValue,
-    count: statusCounts[statusValue].size,
-    color: colorMap[statusValue],
-    columnId: statusSlot?.content?.[0]?.columnId,
-    datasetId: statusSlot?.content?.[0]?.datasetId,
-    value: statusValue
-  }));
-
-  // Calculate center metric
-  let centerMetric: number | string = total;
-  let centerMetricValue: string | undefined;
-
-  // Determine which value to show in center
-  let centerIndex: number | null = null;
-
-  if (hasOrderColumn && Object.keys(statusOrders).length > 0) {
-    // If order column provided, show the value with order=0 (or lowest order)
-    centerIndex = 0; // First in sorted order
-  } else if (config.centerMetricIndex !== null) {
-    // Otherwise use config setting
-    centerIndex = config.centerMetricIndex;
-  }
-
-  // Calculate percentage if centerIndex is set
-  if (centerIndex !== null &&
-      centerIndex >= 0 &&
-      centerIndex < uniqueStatusValues.length) {
-
-    centerMetricValue = uniqueStatusValues[centerIndex];
-    const count = statusCounts[centerMetricValue].size;
-    const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
-    centerMetric = `${percentage}%`;
-  }
+  const fontFamily = theme?.font?.fontFamily ||
+    'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
   return {
-    categories,
-    total,
-    centerMetric,
-    statusSlot,
-    recordIdSlot,
-    orderSlot,
-    allRecords,
-    selectedCategory: null,
-    centerMetricValue,
-    title: customTitle,
-    attributeName
+    backgroundColor,
+    textColor,
+    fontFamily,
+    mainColor: (theme as any)?.mainColor || '#6366f1',
+    colors: theme?.colors || DEFAULT_COLORS
   };
 }
 
 /**
- * Render the status widget
+ * Process data from slots into AlertItem array
+ */
+function processData(
+  data: ItemData['data'],
+  slots: Slot[],
+  theme: ThemeContext,
+  language: string
+): ChartState {
+  const categorySlot = slots.find(s => s.name === 'category');
+  const recordIdSlot = slots.find(s => s.name === 'identifier');
+  const orderSlot = slots.find(s => s.name === 'measure');
+  const titleSlot = slots.find(s => s.name === 'legend');
+
+  const hasOrderColumn = orderSlot?.content && orderSlot.content.length > 0;
+  const hasTitleColumn = titleSlot?.content && titleSlot.content.length > 0;
+
+  // Extract title from title slot column name
+  const customTitle = hasTitleColumn && titleSlot?.content?.[0]
+    ? extractColumnLabel(titleSlot.content[0], language, '')
+    : undefined;
+
+  // Track count of unique records per category
+  const categoryCounts: Record<string, Set<string>> = {};
+  const categoryOrders: Record<string, number> = {};
+
+  // Process data rows
+  if (categorySlot?.content && categorySlot.content.length > 0 &&
+      recordIdSlot?.content && recordIdSlot.content.length > 0 &&
+      data && data.length > 0) {
+
+    data.forEach((row) => {
+      const categoryObj = row[0];
+      const recordIdObj = row[1];
+      const orderObj = hasOrderColumn ? row[2] : undefined;
+
+      const categoryValue = String(categoryObj?.id ?? categoryObj ?? 'Unknown');
+      const recordId = String(recordIdObj?.id ?? recordIdObj);
+
+      let orderValue: number | undefined = undefined;
+      if (orderObj !== undefined && orderObj !== null) {
+        if (typeof orderObj === 'number') {
+          orderValue = orderObj;
+        } else if (typeof orderObj === 'object' && 'id' in orderObj) {
+          orderValue = Number(orderObj.id);
+        } else {
+          orderValue = Number(orderObj);
+        }
+      }
+
+      if (!categoryCounts[categoryValue]) {
+        categoryCounts[categoryValue] = new Set();
+      }
+      categoryCounts[categoryValue].add(recordId);
+
+      if (orderValue !== undefined && !isNaN(orderValue)) {
+        if (categoryOrders[categoryValue] === undefined || orderValue < categoryOrders[categoryValue]) {
+          categoryOrders[categoryValue] = orderValue;
+        }
+      }
+    });
+  }
+
+  // Get unique categories
+  const uniqueCategories = Object.keys(categoryCounts);
+
+  // Sort by order if provided, otherwise alphabetically
+  if (hasOrderColumn && Object.keys(categoryOrders).length > 0) {
+    uniqueCategories.sort((a, b) => {
+      const orderA = categoryOrders[a] ?? 999;
+      const orderB = categoryOrders[b] ?? 999;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.localeCompare(b);
+    });
+  } else {
+    uniqueCategories.sort();
+  }
+
+  // Build items array
+  const items: AlertItem[] = uniqueCategories.map((categoryValue, index) => {
+    let color: string;
+
+    if (hasOrderColumn && categoryOrders[categoryValue] !== undefined) {
+      const orderValue = categoryOrders[categoryValue];
+      color = theme.colors[orderValue % theme.colors.length];
+    } else {
+      color = theme.colors[index % theme.colors.length];
+    }
+
+    return {
+      category: categoryValue,
+      count: categoryCounts[categoryValue].size,
+      color: color,
+      backgroundColor: getBackgroundColor(color),
+      columnId: categorySlot?.content?.[0]?.columnId,
+      datasetId: categorySlot?.content?.[0]?.datasetId,
+      value: categoryValue,
+      order: categoryOrders[categoryValue] ?? index
+    };
+  });
+
+  // Fallback: sample data
+  if (items.length === 0) {
+    const sampleItems = [
+      { category: 'Critical Issues', count: 3, order: 0 },
+      { category: 'Warnings', count: 5, order: 1 },
+      { category: 'Info', count: 2, order: 2 },
+    ];
+
+    sampleItems.forEach((sample) => {
+      const color = theme.colors[sample.order % theme.colors.length];
+      items.push({
+        category: sample.category,
+        count: sample.count,
+        color,
+        backgroundColor: getBackgroundColor(color),
+        order: sample.order
+      });
+    });
+  }
+
+  // Calculate total
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+
+  return {
+    items,
+    total,
+    categorySlot,
+    recordIdSlot,
+    orderSlot,
+    title: customTitle
+  };
+}
+
+/**
+ * Main render function
  */
 export const render = ({
   container,
@@ -379,7 +270,7 @@ export const render = ({
   dimensions: { width, height } = { width: 0, height: 0 }
 }: ChartParams): void => {
   const theme = resolveTheme(options.theme);
-  const state = processData(data, slots, theme.colors, language);
+  const state = processData(data, slots, theme, language);
 
   // Store state for resize
   (container as any).__chartState = state;
@@ -408,39 +299,6 @@ export const resize = ({
   }
 };
 
-// Map specific colors to their background colors (uppercase for efficient matching)
-const BACKGROUND_COLOR_MAP: Record<string, string> = {
-  '#75BB43': '#DDF3CD', // Green -> light green
-  '#FEC325': '#FFEFD4', // Yellow -> light yellow
-  '#BA1A1A': '#FFE2E4', // Red -> light red
-};
-
-/**
- * Get background color based on the dominant category (highest count)
- */
-function getBackgroundColor(categories: StatusCategory[]): string {
-  if (categories.length === 0) return '#f3f4f6';
-
-  // Find category with highest count
-  const dominantCategory = categories.reduce((max, cat) =>
-    cat.count > max.count ? cat : max
-  , categories[0]);
-
-  // Return mapped background color or calculate a light version
-  const mappedColor = BACKGROUND_COLOR_MAP[dominantCategory.color];
-  if (mappedColor) {
-    return mappedColor;
-  }
-
-  // Fallback: blend with white for other colors
-  const rgbColor = d3.rgb(dominantCategory.color);
-  return d3.rgb(
-    255 - (255 - rgbColor.r) * 0.15,
-    255 - (255 - rgbColor.g) * 0.15,
-    255 - (255 - rgbColor.b) * 0.15
-  ).toString();
-}
-
 /**
  * Main widget rendering function
  */
@@ -451,63 +309,79 @@ function renderWidget(
   width: number,
   height: number
 ): void {
-  // Clear container
   container.innerHTML = '';
   container.style.backgroundColor = theme.backgroundColor;
-  // Font family is set in CSS to Roboto
 
   // Handle empty state
-  if (state.total === 0 || state.categories.length === 0) {
+  if (state.items.length === 0) {
     renderEmptyState(container, theme);
     return;
   }
 
-  // Create main container with conditional background
+  // Create main container
   const widget = document.createElement('div');
-  widget.className = 'status-widget';
-
-  // Set conditional background color based on categories
-  const backgroundColor = getBackgroundColor(state.categories);
-  widget.style.backgroundColor = backgroundColor;
-
+  widget.className = 'alert-widget';
   container.appendChild(widget);
 
-  // Always add title element to maintain consistent height (use invisible placeholder if empty)
+  // Title (optional)
   const title = document.createElement('div');
-  title.className = 'widget-title';
-  title.textContent = state.title || '\u00A0'; // Use non-breaking space to preserve height
+  title.className = 'alert-title';
+  title.textContent = state.title || '\u00A0';
   title.style.color = theme.textColor;
   if (!state.title) {
-    title.style.opacity = '0'; // Make invisible but preserve space
+    title.style.opacity = '0';
   }
   widget.appendChild(title);
 
-  // Create content wrapper for categories and chart
-  const contentWrapper = document.createElement('div');
-  contentWrapper.className = 'widget-content';
-  widget.appendChild(contentWrapper);
+  // Alert list
+  const list = document.createElement('div');
+  list.className = 'alert-list';
+  widget.appendChild(list);
 
-  // Render categories list FIRST (left side)
-  const listContainer = document.createElement('div');
-  listContainer.className = 'categories-section';
-  contentWrapper.appendChild(listContainer);
+  // Render alert items
+  state.items.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'alert-card';
+    card.style.backgroundColor = '#FFFFFF';
+    card.style.borderColor = '#E5E7EB';
+    card.setAttribute('data-category', item.category);
 
-  renderCategoriesList(listContainer, state, theme);
+    // Color indicator (left border)
+    const indicator = document.createElement('div');
+    indicator.className = 'alert-indicator';
+    indicator.style.backgroundColor = item.color;
+    card.appendChild(indicator);
 
-  // Render chart SECOND (right side)
-  const chartContainer = document.createElement('div');
-  chartContainer.className = 'chart-section';
-  contentWrapper.appendChild(chartContainer);
+    // Content container
+    const content = document.createElement('div');
+    content.className = 'alert-content';
 
-  // Donut takes about 45% of width for good balance
-  renderDonutChart(chartContainer, state, theme, width * 0.45);
+    // Count
+    const count = document.createElement('div');
+    count.className = 'alert-count';
+    count.style.color = theme.textColor;
+    count.textContent = item.count.toLocaleString();
+    content.appendChild(count);
 
-  // Add click handlers for filtering
-  addInteractionHandlers(container, state, theme, width, height);
+    // Description
+    const description = document.createElement('div');
+    description.className = 'alert-description';
+    description.style.color = '#6B7280';
+    description.textContent = item.category;
+    content.appendChild(description);
+
+    card.appendChild(content);
+    list.appendChild(card);
+
+    // Add click handler
+    card.addEventListener('click', () => {
+      handleCardClick(item, state);
+    });
+  });
 }
 
 /**
- * Render empty state when no data is available
+ * Render empty state
  */
 function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
   const emptyState = document.createElement('div');
@@ -516,316 +390,39 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 
   const icon = document.createElement('div');
   icon.className = 'empty-state-icon';
-  icon.innerHTML = '📊';
+  icon.innerHTML = '📋';
   emptyState.appendChild(icon);
 
   const title = document.createElement('div');
   title.className = 'empty-state-title';
-  title.textContent = 'No Data Available';
+  title.textContent = 'No Alerts Available';
   emptyState.appendChild(title);
 
   const message = document.createElement('div');
   message.className = 'empty-state-message';
-  message.textContent = 'Add a Status Attribute and Record ID to get started.';
+  message.textContent = 'Add an Alert Category and Record ID to get started.';
   emptyState.appendChild(message);
 
   container.appendChild(emptyState);
 }
 
 /**
- * Render the donut chart with center metric
+ * Handle card click for filtering
  */
-function renderDonutChart(
-  container: HTMLElement,
-  state: ChartState,
-  theme: ThemeContext,
-  containerWidth: number
-): void {
-  // Scale donut size based on container, optimized for horizontal layout
-  const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
-  const radius = size / 2;
-  const innerRadius = radius * 0.6;
-
-  const svg = d3.select(container)
-    .append('svg')
-    .attr('width', size)
-    .attr('height', size)
-    .attr('class', 'donut-chart')
-    .style('overflow', 'visible');
-
-  const g = svg.append('g')
-    .attr('transform', `translate(${radius},${radius})`)
-    .style('overflow', 'visible');
-
-  // Create tooltip
-  const tooltip = d3.select(container)
-    .append('div')
-    .attr('class', 'donut-tooltip')
-    .style('opacity', 0);
-
-  // Create pie layout
-  const pie = d3.pie<StatusCategory>()
-    .value(d => d.count)
-    .sort(null);
-
-  const arc = d3.arc<d3.PieArcDatum<StatusCategory>>()
-    .innerRadius(innerRadius)
-    .outerRadius(radius);
-
-  const arcHover = d3.arc<d3.PieArcDatum<StatusCategory>>()
-    .innerRadius(innerRadius)
-    .outerRadius(radius + 8);
-
-  // Render segments
-  const segments = g.selectAll('.segment')
-    .data(pie(state.categories))
-    .enter()
-    .append('g')
-    .attr('class', 'segment');
-
-  segments.append('path')
-    .attr('d', arc)
-    .attr('fill', d => d.data.color)
-    .attr('stroke', theme.backgroundColor)
-    .attr('stroke-width', 2)
-    .attr('data-category', d => d.data.name)
-    .style('cursor', 'pointer')
-    .style('transition', 'all 0.3s ease')
-    .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))')
-    .on('mouseover', function(event, d) {
-      const percentage = state.total > 0 ? Math.round((d.data.count / state.total) * 100) : 0;
-
-      d3.select(this)
-        .transition()
-        .duration(200)
-        .attr('d', arcHover as any)
-        .style('filter', 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))');
-
-      // Show tooltip first to get its dimensions
-      tooltip
-        .style('opacity', 1)
-        .html(`
-          <div class="tooltip-category">${d.data.name}</div>
-          <div class="tooltip-stats">
-            <div><strong>${d.data.count}</strong> records</div>
-            <div><strong>${percentage}%</strong> of total</div>
-          </div>
-        `);
-
-      // Get tooltip dimensions and container bounds
-      const tooltipNode = tooltip.node() as HTMLElement;
-      const tooltipRect = tooltipNode.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-
-      // Calculate position, ensuring tooltip stays within bounds
-      let left = event.offsetX + 10;
-      let top = event.offsetY - 10;
-
-      // Check right edge
-      if (left + tooltipRect.width > containerRect.width) {
-        left = event.offsetX - tooltipRect.width - 10;
-      }
-
-      // Check bottom edge
-      if (top + tooltipRect.height > containerRect.height) {
-        top = event.offsetY - tooltipRect.height - 10;
-      }
-
-      // Check left edge
-      if (left < 0) {
-        left = 10;
-      }
-
-      // Check top edge
-      if (top < 0) {
-        top = 10;
-      }
-
-      tooltip
-        .style('left', `${left}px`)
-        .style('top', `${top}px`);
-    })
-    .on('mouseout', function() {
-      d3.select(this)
-        .transition()
-        .duration(200)
-        .attr('d', arc as any)
-        .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
-
-      tooltip.style('opacity', 0);
-    });
-
-  // Center text - center metric (percentage or total)
-  const centerText = String(state.centerMetric);
-  const fontSize = centerText.includes('%') ? radius * 0.42 : radius * 0.35;
-
-  g.append('text')
-    .attr('class', 'center-score')
-    .attr('text-anchor', 'middle')
-    .attr('dominant-baseline', 'central')
-    .attr('x', 0)
-    .attr('y', 0)
-    .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
-    .style('font-size', `${fontSize}px`)
-    .style('font-weight', '300')
-    .style('fill', theme.textColor)
-    .text(centerText);
-}
-
-/**
- * Render the categories list with counts
- */
-function renderCategoriesList(
-  container: HTMLElement,
-  state: ChartState,
-  theme: ThemeContext
-): void {
-  const list = document.createElement('div');
-  list.className = 'categories-list';
-  container.appendChild(list);
-
-  state.categories.forEach(category => {
-    const item = document.createElement('div');
-    item.className = 'category-item';
-
-    // Add selected class if this category is currently selected
-    if (state.selectedCategory === category.value) {
-      item.classList.add('category-selected');
-    }
-
-    item.setAttribute('data-category', category.name);
-
-    // Color indicator
-    const indicator = document.createElement('div');
-    indicator.className = 'category-indicator';
-    indicator.style.backgroundColor = category.color;
-    item.appendChild(indicator);
-
-    // Label and count container
-    const content = document.createElement('div');
-    content.className = 'category-content';
-
-    const label = document.createElement('div');
-    label.className = 'category-label';
-    label.style.color = theme.textColor;
-    label.textContent = category.name;
-    content.appendChild(label);
-
-    const count = document.createElement('div');
-    count.className = 'category-count';
-    count.style.color = theme.textColor;
-    count.textContent = category.count.toLocaleString();
-    content.appendChild(count);
-
-    item.appendChild(content);
-    list.appendChild(item);
-  });
-}
-
-/**
- * Add interaction handlers for filtering
- */
-function addInteractionHandlers(
-  container: HTMLElement,
-  state: ChartState,
-  theme: ThemeContext,
-  width: number,
-  height: number
-): void {
-  // Category item clicks
-  const categoryItems = container.querySelectorAll('.category-item');
-  categoryItems.forEach((item, index) => {
-    item.addEventListener('click', () => {
-      const category = state.categories[index];
-      handleCategoryClick(category, state, container, theme, width, height);
-    });
-  });
-
-  // Donut segment clicks
-  const segments = container.querySelectorAll('.segment path');
-  segments.forEach((segment, index) => {
-    segment.addEventListener('click', () => {
-      const category = state.categories[index];
-      handleCategoryClick(category, state, container, theme, width, height);
-    });
-  });
-}
-
-/**
- * Handle category click for filtering and recalculation
- */
-function handleCategoryClick(
-  category: StatusCategory,
-  state: ChartState,
-  container: HTMLElement,
-  theme: ThemeContext,
-  width: number,
-  height: number
-): void {
-  // Toggle selection: if clicking same category, deselect it
-  const clickedValue = category.value!;
-  const wasSelected = state.selectedCategory === clickedValue;
-
-  // Update selection state
-  state.selectedCategory = wasSelected ? null : clickedValue;
-
-  // Recalculate based on selection
-  let filteredRecords: any[];
-  let newTotal: number;
-
-  if (state.selectedCategory) {
-    // Filter records based on selected category
-    filteredRecords = state.allRecords.filter(record => record.statusValue === state.selectedCategory);
-  } else {
-    // Show all data
-    filteredRecords = state.allRecords;
-  }
-
-  // Count unique records
-  const uniqueRecordIds = new Set(filteredRecords.map(r => r.recordId));
-  newTotal = uniqueRecordIds.size;
-
-  // Update state total
-  state.total = newTotal;
-
-  // Recalculate category counts based on filtered data
-  const newCounts: Record<string, Set<string>> = {};
-  filteredRecords.forEach(record => {
-    if (!newCounts[record.statusValue]) {
-      newCounts[record.statusValue] = new Set();
-    }
-    newCounts[record.statusValue].add(record.recordId);
-  });
-
-  // Update category counts
-  state.categories.forEach(cat => {
-    cat.count = newCounts[cat.value!]?.size || 0;
-  });
-
-  // Recalculate center metric
-  if (state.centerMetricValue && newCounts[state.centerMetricValue]) {
-    const count = newCounts[state.centerMetricValue].size;
-    const percentage = newTotal > 0 ? Math.round((count / newTotal) * 100) : 0;
-    state.centerMetric = `${percentage}%`;
-  } else {
-    state.centerMetric = newTotal;
-  }
-
-  // Re-render the widget with updated state
-  renderWidget(container, state, theme, width, height);
-
+function handleCardClick(item: AlertItem, state: ChartState): void {
   // Send custom event
-  sendCustomEvent({
-    eventType: 'statusCategorySelected',
-    category: category.name,
-    count: category.count,
-    totalRecords: state.total,
-    isFiltered: state.selectedCategory !== null
-  });
+  window.parent.postMessage({
+    type: 'customEvent',
+    data: {
+      eventType: 'alertSelected',
+      category: item.category,
+      count: item.count
+    }
+  }, '*');
 
-  // Send filter event to dashboard (only if category is selected, not deselected)
-  if (state.selectedCategory && state.statusSlot?.content && state.statusSlot.content.length > 0) {
-    const column = state.statusSlot.content[0];
+  // Send filter event
+  if (state.categorySlot?.content && state.categorySlot.content.length > 0) {
+    const column = state.categorySlot.content[0];
     const filters: ItemFilter[] = [{
       expression: '? = ?',
       parameters: [
@@ -833,7 +430,7 @@ function handleCategoryClick(
           column_id: column.columnId,
           dataset_id: column.datasetId
         },
-        clickedValue
+        item.value
       ],
       properties: {
         origin: 'filterFromVizItem',
@@ -841,22 +438,12 @@ function handleCategoryClick(
       }
     }];
 
-    sendFilterEvent(filters);
-  } else if (!state.selectedCategory) {
-    // Clear filter when deselected
-    sendFilterEvent([]);
+    window.parent.postMessage({ type: 'setFilter', filters }, '*');
   }
 }
 
 /**
  * Build query for data retrieval
- *
- * CRITICAL: We need ROW-LEVEL data to count unique records per status value
- *
- * Query structure:
- * - Dimension 1: Status Attribute (e.g., Status, State)
- * - Dimension 2: Record ID (for unique counting)
- * - Dimension 3 (optional): Center Metric value selector
  */
 export const buildQuery = ({
   slots = [],
@@ -865,11 +452,11 @@ export const buildQuery = ({
   slots: Slot[];
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
-  const statusSlot = slots.find(s => s.name === 'category');
+  const categorySlot = slots.find(s => s.name === 'category');
   const recordIdSlot = slots.find(s => s.name === 'identifier');
   const orderSlot = slots.find(s => s.name === 'measure');
 
-  if (!statusSlot?.content || statusSlot.content.length === 0 ||
+  if (!categorySlot?.content || categorySlot.content.length === 0 ||
       !recordIdSlot?.content || recordIdSlot.content.length === 0) {
     return {
       dimensions: [],
@@ -879,17 +466,16 @@ export const buildQuery = ({
   }
 
   const dimensions: any[] = [];
-  const measures: any[] = [];
 
-  // Add status attribute column as dimension
-  const statusColumn = statusSlot.content[0];
+  // Add category column
+  const categoryColumn = categorySlot.content[0];
   dimensions.push({
-    dataset_id: statusColumn.datasetId || (statusColumn as any).set,
-    column_id: statusColumn.columnId || (statusColumn as any).column,
-    level: statusColumn.level || 1
+    dataset_id: categoryColumn.datasetId || (categoryColumn as any).set,
+    column_id: categoryColumn.columnId || (categoryColumn as any).column,
+    level: categoryColumn.level || 1
   });
 
-  // Add record ID column as dimension
+  // Add record ID column
   const recordIdColumn = recordIdSlot.content[0];
   dimensions.push({
     dataset_id: recordIdColumn.datasetId || (recordIdColumn as any).set,
@@ -897,8 +483,7 @@ export const buildQuery = ({
     level: recordIdColumn.level || 1
   });
 
-  // Add order column as dimension if provided (NOT as measure)
-  // This way we get row-level data with the order value for each record
+  // Add order column if provided
   if (orderSlot?.content && orderSlot.content.length > 0) {
     const orderColumn = orderSlot.content[0];
     dimensions.push({
@@ -908,12 +493,9 @@ export const buildQuery = ({
     });
   }
 
-  // Note: Title slot is NOT added to query - we only use the column name from slot metadata
-
   return {
     dimensions,
-    measures,
+    measures: [],
     order: []
-    // No limit - process all records
   };
 };
