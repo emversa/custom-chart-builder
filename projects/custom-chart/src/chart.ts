@@ -138,6 +138,21 @@ function extractColumnLabel(column: any, language: string, fallback = 'Attribute
   return fallback;
 }
 
+/**
+ * Format title: remove underscores and capitalize first letter of each word
+ * Example: "TOTAL_DEVICES" -> "Total Devices"
+ */
+function formatTitle(title: string): string {
+  return title
+    .replace(/_/g, ' ')  // Replace underscores with spaces
+    .split(' ')           // Split into words
+    .map(word => {
+      if (word.length === 0) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
 function sendFilterEvent(filters: ItemFilter[]): void {
   window.parent.postMessage({ type: 'setFilter', filters }, '*');
 }
@@ -267,7 +282,7 @@ function processData(
 
   // Extract title from title slot column name only if provided
   const customTitle = hasTitleColumn && titleSlot?.content?.[0]
-    ? extractColumnLabel(titleSlot.content[0], language, '')
+    ? formatTitle(extractColumnLabel(titleSlot.content[0], language, ''))
     : undefined;
 
   // Fallback: sample data (demo)
@@ -468,8 +483,8 @@ function renderWidget(
   chartContainer.className = 'chart-section';
   contentWrapper.appendChild(chartContainer);
 
-  // Render donut with fixed size (responsive to screen size)
-  renderDonutChart(chartContainer, state, theme, width, height);
+  // Render donut taking 45% of width
+  renderDonutChart(chartContainer, state, theme, width * 0.45);
 
   // Add click handlers for filtering
   addInteractionHandlers(container, state, theme, width, height);
@@ -503,21 +518,19 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 
 /**
  * Render the donut chart with center metric
- * Standard size: 120x120px with 20px stroke
- * Small screen: 80x80px with ~13px stroke
+ * Dynamic sizing: takes 45% of component width (scales with container)
+ * Fixed stroke: 20px weight
  */
 function renderDonutChart(
   container: HTMLElement,
   state: ChartState,
   theme: ThemeContext,
-  width: number,
-  height: number
+  containerWidth: number
 ): void {
-  // Determine size based on container width for responsive behavior
-  // Standard: 120px, Small screens (< 600px): 80px
-  const isSmallScreen = width < 600;
-  const size = isSmallScreen ? 80 : 120;
-  const strokeWidth = isSmallScreen ? 13 : 20;
+  // Scale donut size based on container width (45% of component)
+  // Minimum 80px, maximum 260px for optimal display
+  const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
+  const strokeWidth = 30; // Fixed 30px stroke weight
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -632,8 +645,9 @@ function renderDonutChart(
     });
 
   // Center text - center metric (percentage or total)
+  // Increased font size to ensure "100%" fits perfectly in center
   const centerText = String(state.centerMetric);
-  const fontSize = centerText.includes('%') ? radius * 0.42 : radius * 0.35;
+  const fontSize = centerText.includes('%') ? radius * 0.55 : radius * 0.45;
 
   g.append('text')
     .attr('class', 'center-score')
@@ -643,7 +657,7 @@ function renderDonutChart(
     .attr('y', 0)
     .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
     .style('font-size', `${fontSize}px`)
-    .style('font-weight', '300')
+    .style('font-weight', '500')
     .style('fill', theme.textColor)
     .text(centerText);
 }
