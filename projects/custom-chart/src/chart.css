@@ -263,10 +263,14 @@
 .widget-content.layout-vertical .categories-list {
   order: 2;
   align-self: flex-start;
+  width: 100%;
 }
 
 .widget-content.layout-vertical .donut-chart {
   order: 1;
+  align-self: center;
+  width: 80px;
+  height: 80px;
 }
 
 /* Responsive adjustments for very small screens */

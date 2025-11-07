@@ -582,11 +582,10 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  // Fixed size from Figma: 120px x 120px
+  // Fixed size from Figma: 120px x 120px with 15px stroke
+  // CSS scales it to 80px in vertical layout
   const size = 120;
-
-  // Stroke width: 20px (proportional to 120px size)
-  const strokeWidth = 20;
+  const strokeWidth = 15;
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -651,8 +650,8 @@ function renderDonutChart(
   segments.append('path')
     .attr('d', arc)
     .attr('fill', d => d.data.color)
-    .attr('stroke', d => d.data.name === '__empty__' ? 'none' : 'white')
-    .attr('stroke-width', d => d.data.name === '__empty__' ? 0 : 0.5)
+    .attr('stroke', d => d.data.name === '__empty__' ? 'none' : '#FFF')
+    .attr('stroke-width', d => d.data.name === '__empty__' ? 0 : 1)
     .attr('data-category', d => d.data.name)
     .style('cursor', d => d.data.name === '__empty__' ? 'default' : 'pointer')
     .on('mouseover', function(event, d) {
