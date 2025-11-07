@@ -417,9 +417,6 @@ export const resize = ({
   }
 };
 
-// Static background color for the widget
-const STATIC_BACKGROUND_COLOR = '#F9F9FC';
-
 /**
  * Main widget rendering function
  */
@@ -441,50 +438,57 @@ function renderWidget(
     return;
   }
 
-  // Create main container with static background
+  // Create main container - Figma: Frame 1010107936
   const widget = document.createElement('div');
   widget.className = 'status-widget';
-
-  // Set static background color
-  widget.style.backgroundColor = STATIC_BACKGROUND_COLOR;
-
   container.appendChild(widget);
 
-  // Always add title element to maintain consistent height (use invisible placeholder if empty)
+  // Title wrapper - Figma: Frame 1010107939
+  const titleWrapper = document.createElement('div');
+  titleWrapper.className = 'title-wrapper';
+  widget.appendChild(titleWrapper);
+
+  // Title - Figma: "Devices Online"
   const title = document.createElement('div');
   title.className = 'widget-title';
-  title.textContent = state.title || '\u00A0'; // Use non-breaking space to preserve height
+  title.textContent = state.title || '\u00A0';
   title.style.color = theme.textColor;
   if (!state.title) {
-    title.style.opacity = '0'; // Make invisible but preserve space
+    title.style.opacity = '0';
   }
-  widget.appendChild(title);
+  titleWrapper.appendChild(title);
 
-  // Create content wrapper for categories and chart
+  // Content wrapper - Figma: Frame 1010107937
   const contentWrapper = document.createElement('div');
-  contentWrapper.className = 'widget-content';
-
-  // Determine layout based on aspect ratio: vertical if height > width, horizontal otherwise
-  if (height > width) {
-    contentWrapper.classList.add('layout-vertical');
-  }
-
+  contentWrapper.className = 'content-wrapper';
   widget.appendChild(contentWrapper);
 
-  // Render categories list FIRST (left side)
-  const listContainer = document.createElement('div');
-  listContainer.className = 'categories-section';
-  contentWrapper.appendChild(listContainer);
+  // Inner wrapper - Figma: Frame 1010107807
+  const innerWrapper = document.createElement('div');
+  innerWrapper.className = 'inner-wrapper';
+  contentWrapper.appendChild(innerWrapper);
 
-  renderCategoriesList(listContainer, state, theme);
+  // Center container - Figma: Frame 3467150
+  const centerContainer = document.createElement('div');
+  centerContainer.className = 'center-container';
+  innerWrapper.appendChild(centerContainer);
 
-  // Render chart SECOND (right side)
-  const chartContainer = document.createElement('div');
-  chartContainer.className = 'chart-section';
-  contentWrapper.appendChild(chartContainer);
+  // Widget content - Figma: Frame 1010107450 (48px gap)
+  const widgetContent = document.createElement('div');
+  widgetContent.className = 'widget-content';
 
-  // Render donut taking 45% of width
-  renderDonutChart(chartContainer, state, theme, width * 0.45);
+  // Determine layout based on aspect ratio
+  if (height > width) {
+    widgetContent.classList.add('layout-vertical');
+  }
+
+  centerContainer.appendChild(widgetContent);
+
+  // Render categories list
+  renderCategoriesList(widgetContent, state, theme);
+
+  // Render chart
+  renderDonutChart(widgetContent, state, theme, width * 0.45);
 
   // Add click handlers for filtering
   addInteractionHandlers(container, state, theme, width, height);
@@ -517,9 +521,7 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 }
 
 /**
- * Render the donut chart with center metric
- * Dynamic sizing: takes 45% of component width (scales with container)
- * Dynamic stroke: 20px base, scales proportionally with size
+ * Render the donut chart with center metric - Figma specs
  */
 function renderDonutChart(
   container: HTMLElement,
@@ -527,13 +529,11 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  // Scale donut size based on container width (45% of component)
-  // Minimum 80px, maximum 260px for optimal display
-  const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
+  // Fixed size from Figma: 120px x 120px
+  const size = 120;
 
-  // Dynamic stroke width: 20px base at 120px size, scales proportionally
-  // Minimum 10px to prevent being too thin at small sizes
-  const strokeWidth = Math.max(Math.floor(size * 0.1667), 10);
+  // Stroke width: 15px (thinner donut ring)
+  const strokeWidth = 15;
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -564,10 +564,6 @@ function renderDonutChart(
     .innerRadius(innerRadius)
     .outerRadius(radius);
 
-  const arcHover = d3.arc<d3.PieArcDatum<StatusCategory>>()
-    .innerRadius(innerRadius)
-    .outerRadius(radius + 8);
-
   // Render segments
   const segments = g.selectAll('.segment')
     .data(pie(state.categories))
@@ -578,22 +574,13 @@ function renderDonutChart(
   segments.append('path')
     .attr('d', arc)
     .attr('fill', d => d.data.color)
-    .attr('stroke', theme.backgroundColor)
-    .attr('stroke-width', 2)
+    .attr('stroke', '#FFF')
+    .attr('stroke-width', 1)
     .attr('data-category', d => d.data.name)
     .style('cursor', 'pointer')
-    .style('transition', 'all 0.3s ease')
-    .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))')
     .on('mouseover', function(event, d) {
       const percentage = state.total > 0 ? Math.round((d.data.count / state.total) * 100) : 0;
 
-      d3.select(this)
-        .transition()
-        .duration(200)
-        .attr('d', arcHover as any)
-        .style('filter', 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))');
-
-      // Show tooltip first to get its dimensions
       tooltip
         .style('opacity', 1)
         .html(`
@@ -638,18 +625,11 @@ function renderDonutChart(
         .style('top', `${top}px`);
     })
     .on('mouseout', function() {
-      d3.select(this)
-        .transition()
-        .duration(200)
-        .attr('d', arc as any)
-        .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
-
       tooltip.style('opacity', 0);
     });
 
-  // Center text - center metric (percentage or total)
+  // Center text - Figma: display-3 (40px, centered)
   const centerText = String(state.centerMetric);
-  const fontSize = centerText.includes('%') ? radius * 0.48 : radius * 0.42;
 
   g.append('text')
     .attr('class', 'center-score')
@@ -657,10 +637,6 @@ function renderDonutChart(
     .attr('dominant-baseline', 'central')
     .attr('x', 0)
     .attr('y', 0)
-    .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
-    .style('font-size', `${fontSize}px`)
-    .style('font-weight', '500')
-    .style('fill', theme.textColor)
     .text(centerText);
 }
 
@@ -699,13 +675,11 @@ function renderCategoriesList(
 
     const label = document.createElement('div');
     label.className = 'category-label';
-    label.style.color = theme.textColor;
     label.textContent = category.name;
     content.appendChild(label);
 
     const count = document.createElement('div');
     count.className = 'category-count';
-    count.style.color = theme.textColor;
     count.textContent = category.count.toLocaleString();
     content.appendChild(count);
 

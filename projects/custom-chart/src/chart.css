@@ -1,90 +1,90 @@
-/* Status Widget Styles */
+/* KPI Donut Widget Styles - Figma Specs */
 
 .status-widget {
+  display: flex;
   width: 100%;
   height: 100%;
+  padding: 16px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 16px;
+  flex-shrink: 0;
+  border-radius: 16px;
+  background: #F9F9FC;
+  box-sizing: border-box;
+  overflow: visible;
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Title - Figma: heading-3 */
+.widget-title {
+  color: var(--Text-onLight-primary, #181C20);
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--heading-3-font-size, 18px);
+  font-style: normal;
+  font-weight: var(--heading-3-font-weight, 500);
+  line-height: var(--heading-3-line-height, 24px);
+  letter-spacing: var(--heading-3-letter-spacing, 0);
+  align-self: stretch;
+}
+
+/* Title wrapper - Figma: Frame 1010107939 */
+.title-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 68px;
+  align-self: stretch;
+}
+
+/* Content wrapper - Figma: Frame 1010107937 */
+.content-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1 0 0;
+  align-self: stretch;
+}
+
+/* Inner wrapper - Figma: Frame 1010107807 */
+.inner-wrapper {
   display: flex;
   flex-direction: column;
-  padding: clamp(12px, 3vh, 20px);
-  box-sizing: border-box;
-  border-radius: 16px;
-  overflow: visible;
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  /* Background color is set to static #F9F9FC */
+  align-items: flex-start;
+  gap: 12px;
+  border-radius: var(--l, 16px);
 }
 
-/* Widget title */
-.widget-title {
-  font-size: clamp(16px, 4vw, 20px);
-  font-weight: 500;
-  margin-bottom: clamp(8px, 2vh, 16px);
-  opacity: 1;
-  letter-spacing: -0.02em;
-  /* Reserve consistent space for title */
-  min-height: clamp(16px, 4vw, 20px);
+/* Center container - Figma: Frame 3467150 */
+.center-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  align-self: stretch;
 }
 
-/* Content wrapper for categories and chart - always horizontal */
+/* Widget content with categories and chart - Figma: Frame 1010107450 */
 .widget-content {
-  flex: 1;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: clamp(2px, 1vw, 8px);
-  overflow: visible;
-  /* Ensure consistent height for 3 legend rows regardless of actual content */
-  min-height: calc(
-    3 * (clamp(28px, 5vh, 40px) + clamp(8px, 2vh, 16px)) +
-    2 * clamp(4px, 1.5vh, 16px)
-  );
-}
-
-.widget-content .categories-section {
-  flex: 1 1 auto;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  min-width: 0;
-  padding-right: clamp(12px, 2vw, 24px);
+  gap: 48px;
 }
 
-.widget-content .chart-section {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: clamp(4px, 1vh, 12px);
-  overflow: visible;
-  margin-right: clamp(-8px, -1vw, -12px);
-}
-
-/* Categories list - allow more space to prevent text wrapping */
+/* Categories list - Figma: Frame 1010107449 */
 .categories-list {
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, 1.5vh, 16px);
-  width: 100%;
-  max-width: 400px;
-  flex: 1 1 auto;
-  min-width: 0;
-  /* Ensure consistent height for 3 rows: 3 items + 2 gaps */
-  min-height: calc(
-    3 * (clamp(28px, 5vh, 40px) + clamp(8px, 2vh, 16px)) +
-    2 * clamp(4px, 1.5vh, 16px)
-  );
-  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 8px;
 }
 
+/* Category row - Figma: Key Row */
 .category-item {
   display: flex;
   align-items: center;
-  gap: clamp(8px, 1.5vw, 12px);
+  gap: 8px;
   cursor: pointer;
-  padding: clamp(4px, 1vh, 8px) clamp(8px, 1.5vw, 12px);
-  border-radius: 8px;
   transition: all 0.25s ease;
-  position: relative;
 }
 
 .category-item:hover {
@@ -96,65 +96,80 @@
   transform: translateX(2px);
 }
 
-/* Selected state - same as hover */
 .category-item.category-selected {
   background-color: rgba(0, 0, 0, 0.05);
   transform: translateX(4px);
 }
 
-/* Color indicator bar */
+/* Color indicator bar - Figma: Legend */
 .category-indicator {
   width: 4px;
-  height: clamp(28px, 5vh, 40px);
-  border-radius: 2px;
+  align-self: stretch;
+  border-radius: 2px 0 0 2px;
   flex-shrink: 0;
+  /* Background color set dynamically via inline style */
 }
 
-/* Category content */
+/* Category content - Figma: Legend item */
 .category-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0; /* Allow text to shrink */
+  justify-content: center;
+  align-items: center;
 }
 
+/* Category label - Figma: caption-body */
 .category-label {
-  font-size: clamp(11px, 2.5vw, 13px);
-  font-weight: 300;
-  opacity: 0.8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  align-self: stretch;
+  color: var(--Text-onLight-secondary, rgba(24, 28, 32, 0.60));
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--caption-body-font-size, 12px);
+  font-style: normal;
+  font-weight: var(--caption-body-font-weight, 400);
+  line-height: var(--caption-body-line-height, 16px);
+  letter-spacing: var(--caption-body-letter-spacing, 0.1px);
 }
 
+/* Category count - Figma: heading-3 */
 .category-count {
-  font-size: clamp(20px, 5vw, 28px);
-  font-weight: 300;
-  line-height: 1.2;
+  align-self: stretch;
+  color: var(--Text-onLight-primary, #181C20);
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--heading-3-font-size, 18px);
+  font-style: normal;
+  font-weight: var(--heading-3-font-weight, 500);
+  line-height: var(--heading-3-line-height, 24px);
+  letter-spacing: var(--heading-3-letter-spacing, 0);
   font-variant-numeric: tabular-nums;
 }
 
-/* Donut chart */
+/* Donut chart - Figma: 120px x 120px */
 .donut-chart {
-  display: block;
+  display: flex;
+  width: 120px;
+  height: 120px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   overflow: visible;
+  position: relative;
 }
 
-.chart-section {
-  position: relative;
+/* Center score - Figma: display-3 */
+.center-score {
+  color: var(--Text-onLight-primary, #181C20);
+  text-align: center;
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--display-3-font-size, 40px);
+  font-style: normal;
+  font-weight: var(--display-3-font-weight, 500);
+  line-height: var(--display-3-line-height, 46px);
+  letter-spacing: var(--display-3-letter-spacing, 0);
+  font-variant-numeric: tabular-nums;
 }
 
 .segment {
   overflow: visible;
-}
-
-.segment path {
-  transition: all 0.3s ease;
-}
-
-.center-score {
-  font-variant-numeric: tabular-nums;
 }
 
 /* Donut tooltip */
@@ -173,7 +188,7 @@
 }
 
 .tooltip-category {
-  font-weight: 300;
+  font-weight: 600;
   margin-bottom: 8px;
   font-size: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
@@ -188,7 +203,7 @@
 }
 
 .tooltip-stats strong {
-  font-weight: 300;
+  font-weight: 700;
   color: #fbbf24;
 }
 
@@ -213,7 +228,7 @@
 
 .empty-state-title {
   font-size: 18px;
-  font-weight: 300;
+  font-weight: 600;
   opacity: 0.9;
 }
 
@@ -224,45 +239,29 @@
   line-height: 1.5;
 }
 
-/* Vertical layout - applied when height < width (aspect ratio check) */
+/* Vertical layout - applied when height > width */
 .widget-content.layout-vertical {
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
   gap: 16px;
-  min-height: auto;
-}
-
-.widget-content.layout-vertical .categories-section {
-  order: 2;
-  width: 100%;
-  padding-right: 0;
-  justify-content: center;
-}
-
-.widget-content.layout-vertical .chart-section {
-  order: 1;
-  margin-right: 0;
-  padding: 0;
 }
 
 .widget-content.layout-vertical .categories-list {
-  gap: 12px;
-  max-width: 100%;
-  min-height: auto;
-  justify-content: center;
+  order: 2;
+  align-self: flex-start;
+  width: 100%;
 }
 
-.widget-content.layout-vertical .category-count {
-  font-size: clamp(20px, 5vw, 24px);
+.widget-content.layout-vertical .donut-chart {
+  order: 1;
+  align-self: center;
+  width: 80px;
+  height: 80px;
 }
 
-.widget-content.layout-vertical .category-label {
-  font-size: clamp(11px, 2.5vw, 12px);
-}
-
-.widget-content.layout-vertical .category-indicator {
-  height: clamp(32px, 5vh, 36px);
+.widget-content.layout-vertical .center-score {
+  font-size: 18px;
+  line-height: 24px;
 }
 
 /* Responsive adjustments for very small screens */
@@ -273,7 +272,6 @@
 
   .widget-title {
     font-size: 16px;
-    margin-bottom: 10px;
   }
 
   .categories-list {
@@ -286,10 +284,6 @@
 
   .category-label {
     font-size: 11px;
-  }
-
-  .category-indicator {
-    height: 32px;
   }
 
   .empty-state-icon {
