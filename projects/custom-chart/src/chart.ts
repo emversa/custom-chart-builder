@@ -26,9 +26,11 @@ interface ChartState {
   categorySlot?: Slot;
   sizeSlot?: Slot; // For COUNT of records per category
   measureSlot?: Slot; // For AVERAGE health score
+  orderSlot?: Slot;
   legendSlot?: Slot;
   selectedCategory?: string | null; // Track selected filter
   title?: string;
+  allCategoryData: Record<string, { count: number; avgScore: number }>; // Store all data for recalculation
 }
 
 interface ThemeContext {
@@ -133,29 +135,34 @@ function formatTitle(title: string): string {
  * Uses server-side aggregated health category data
  *
  * LOGIC:
- * 1. Input: Aggregated rows with [Health Category, Count, Avg Score]
+ * 1. Input: Aggregated rows with [Category, Order?, Count, Avg Score]
  * 2. Read pre-aggregated values directly from server
- * 3. Legend shows: COUNT of records per health category (from count measure)
- * 4. Center shows: AVERAGE health score (weighted average from avgScore measure)
- * 5. Display order is hardcoded: Healthy (Green), Warning (Yellow), Error (Red)
+ * 3. Legend shows: COUNT of records per category (from count measure)
+ * 4. Center shows: AVERAGE score (weighted average from avgScore measure)
+ * 5. Display order: uses order column if provided, otherwise hardcoded: Healthy, Warning, Error
+ * 6. Clicking category filters data and recalculates center score
  *
- * Data structure: [Category, Count, AvgScore]
+ * Data structure:
+ *  - With order: [Category, Order, Count, AvgScore]
+ *  - Without order: [Category, Count, AvgScore]
  *
  * Example: Server returns 3 rows (already aggregated)
- *  - ["Healthy", 500, 87.5] → Healthy count = 500, avg = 87.5
- *  - ["Warning", 300, 65.2] → Warning count = 300, avg = 65.2
- *  - ["Error", 200, 35.8] → Error count = 200, avg = 35.8
+ *  - ["Healthy", 0, 500, 87.5] → Healthy count = 500, avg = 87.5
+ *  - ["Warning", 1, 300, 65.2] → Warning count = 300, avg = 65.2
+ *  - ["Error", 2, 200, 35.8] → Error count = 200, avg = 35.8
  *  - Center displays: Weighted average = (500*87.5 + 300*65.2 + 200*35.8) / 1000 = 72
  */
 function processData(
   data: ItemData['data'],
   slots: Slot[],
   colors: string[],
-  language: string
+  language: string,
+  selectedCategory?: string | null
 ): ChartState {
   const categorySlot = slots.find(s => s.name === 'category');
   const sizeSlot = slots.find(s => s.name === 'size');
   const measureSlot = slots.find(s => s.name === 'measure');
+  const orderSlot = slots.find(s => s.name === 'order');
   const legendSlot = slots.find(s => s.name === 'legend');
 
   // Predefined colors for health categories
@@ -172,7 +179,9 @@ function processData(
 
   // Track aggregated data per category
   const categoryData: Record<string, { count: number; avgScore: number }> = {};
+  const categoryOrders: Record<string, number> = {};
 
+  const hasOrderColumn = orderSlot?.content && orderSlot.content.length > 0;
   const hasTitleColumn = legendSlot?.content && legendSlot.content.length > 0;
 
   // Process data - data is already aggregated by server
@@ -181,11 +190,14 @@ function processData(
       measureSlot?.content && measureSlot.content.length > 0 &&
       data && data.length > 0) {
 
-    // Data structure: [Category, Count, AvgScore]
+    // Data structure:
+    //   With order: [Category, Order, Count, AvgScore]
+    //   Without order: [Category, Count, AvgScore]
     data.forEach((row) => {
       const categoryObj = row[0];
-      const sizeObj = row[1];
-      const avgScoreObj = row[2];
+      const orderValueObj = hasOrderColumn ? row[1] : undefined;
+      const sizeObj = hasOrderColumn ? row[2] : row[1];
+      const avgScoreObj = hasOrderColumn ? row[3] : row[2];
 
       // Extract display name from category object
       let categoryValue: string;
@@ -222,6 +234,22 @@ function processData(
 
       // Store both count and average score
       categoryData[categoryValue] = { count: countValue, avgScore: avgScoreValue };
+
+      // Extract and store order value if provided
+      if (hasOrderColumn && orderValueObj !== undefined && orderValueObj !== null) {
+        let orderValue: number | undefined = undefined;
+        if (typeof orderValueObj === 'number') {
+          orderValue = orderValueObj;
+        } else if (typeof orderValueObj === 'object' && 'id' in orderValueObj) {
+          orderValue = Number(orderValueObj.id);
+        } else {
+          orderValue = Number(orderValueObj);
+        }
+
+        if (orderValue !== undefined && !isNaN(orderValue)) {
+          categoryOrders[categoryValue] = orderValue;
+        }
+      }
     });
   }
 
@@ -237,20 +265,51 @@ function processData(
     categoryData['Error'] = { count: 2, avgScore: 35 };
   }
 
-  // Hardcoded order: Healthy, Warning, Error
-  const orderedCategoryNames = ['Healthy', 'Warning', 'Error'];
-  const uniqueCategories = orderedCategoryNames.filter(cat => categoryData[cat] !== undefined);
+  // Store all category data for recalculation on filter
+  const allCategoryData = { ...categoryData };
 
-  // Calculate total count and weighted average score
-  const total = uniqueCategories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
-  const weightedSum = uniqueCategories.reduce((sum, cat) =>
+  // Determine sort order
+  let uniqueCategories: string[];
+  if (hasOrderColumn && Object.keys(categoryOrders).length > 0) {
+    // Sort by order column
+    uniqueCategories = Object.keys(categoryData).sort((a, b) => {
+      const orderA = categoryOrders[a] ?? 999;
+      const orderB = categoryOrders[b] ?? 999;
+      return orderA - orderB;
+    });
+  } else {
+    // Use hardcoded order: Healthy, Warning, Error
+    const orderedCategoryNames = ['Healthy', 'Warning', 'Error'];
+    uniqueCategories = orderedCategoryNames.filter(cat => categoryData[cat] !== undefined);
+    // Add any categories not in the hardcoded list
+    Object.keys(categoryData).forEach(cat => {
+      if (!uniqueCategories.includes(cat)) {
+        uniqueCategories.push(cat);
+      }
+    });
+  }
+
+  // Filter data if category is selected
+  let filteredCategories = uniqueCategories;
+  if (selectedCategory) {
+    filteredCategories = uniqueCategories.filter(cat => cat === selectedCategory);
+  }
+
+  // Calculate total count and weighted average score (based on filtered data)
+  const total = filteredCategories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
+  const weightedSum = filteredCategories.reduce((sum, cat) =>
     sum + (categoryData[cat].count * categoryData[cat].avgScore), 0);
   const aggregatedScore = total > 0 ? Math.round(weightedSum / total) : 0;
 
-  // Build categories array with hardcoded colors
+  // Build categories array
   const categories: StatusCategory[] = uniqueCategories.map(categoryValue => {
-    // Use color mapping for fixed colors: Healthy=Green, Warning=Yellow, Error=Red
-    const color = colorMapping[categoryValue] || healthyColor;
+    // Determine color based on order or name mapping
+    let color = colorMapping[categoryValue] || healthyColor;
+    if (hasOrderColumn && categoryOrders[categoryValue] !== undefined) {
+      const orderValue = categoryOrders[categoryValue];
+      const colorArray = [healthyColor, warningColor, errorColor];
+      color = colorArray[orderValue % colorArray.length];
+    }
 
     return {
       name: categoryValue,
@@ -269,9 +328,11 @@ function processData(
     categorySlot,
     sizeSlot,
     measureSlot,
+    orderSlot,
     legendSlot,
-    selectedCategory: null,
-    title: customTitle
+    selectedCategory: selectedCategory || null,
+    title: customTitle,
+    allCategoryData
   };
 }
 
@@ -290,9 +351,14 @@ export const render = ({
   const theme = resolveTheme(options.theme);
   const state = processData(data, slots, theme.colors, language);
 
-  // Store state for resize
+  // Store data for recalculation on filter
   (container as any).__chartState = state;
   (container as any).__theme = theme;
+  (container as any).__data = data;
+  (container as any).__slots = slots;
+  (container as any).__language = language;
+  (container as any).__width = width;
+  (container as any).__height = height;
 
   renderWidget(container, state, theme, width, height);
 };
@@ -648,8 +714,8 @@ function addInteractionHandlers(
 }
 
 /**
- * Handle category click for filtering
- * Component display stays static - filtering only affects other dashboard components
+ * Handle category click for filtering and recalculation
+ * Filters data to selected category and recalculates center score
  */
 function handleCategoryClick(
   category: StatusCategory,
@@ -662,26 +728,35 @@ function handleCategoryClick(
   // Toggle selection: if clicking same category, deselect it
   const clickedValue = category.value!;
   const wasSelected = state.selectedCategory === clickedValue;
+  const newSelection = wasSelected ? null : clickedValue;
 
-  // Update selection state
-  state.selectedCategory = wasSelected ? null : clickedValue;
+  // Retrieve stored data from container
+  const data = (container as any).__data;
+  const slots = (container as any).__slots;
+  const language = (container as any).__language;
 
-  // Re-render the widget to update selection highlighting
-  renderWidget(container, state, theme, width, height);
+  // Reprocess data with the new selection to recalculate score
+  const newState = processData(data, slots, theme.colors, language, newSelection);
+
+  // Update container's stored state
+  (container as any).__chartState = newState;
+
+  // Re-render the widget with recalculated data
+  renderWidget(container, newState, theme, width, height);
 
   // Send custom event
   sendCustomEvent({
-    eventType: 'healthCategorySelected',
+    eventType: 'categorySelected',
     category: category.name,
     count: category.count,
-    totalRecords: state.total,
-    aggregatedScore: state.aggregatedScore,
-    isFiltered: state.selectedCategory !== null
+    totalRecords: newState.total,
+    aggregatedScore: newState.aggregatedScore,
+    isFiltered: newState.selectedCategory !== null
   });
 
-  // Send filter event to dashboard (only if category is selected, not deselected)
-  if (state.selectedCategory && state.categorySlot?.content && state.categorySlot.content.length > 0) {
-    const column = state.categorySlot.content[0];
+  // Send filter event to dashboard
+  if (newState.selectedCategory && newState.categorySlot?.content && newState.categorySlot.content.length > 0) {
+    const column = newState.categorySlot.content[0];
     const filters: ItemFilter[] = [{
       expression: '? = ?',
       parameters: [
@@ -698,7 +773,7 @@ function handleCategoryClick(
     }];
 
     sendFilterEvent(filters);
-  } else if (!state.selectedCategory) {
+  } else {
     // Clear filter when deselected
     sendFilterEvent([]);
   }
@@ -709,16 +784,19 @@ function handleCategoryClick(
  * Uses server-side aggregation for measures
  *
  * Query structure:
- * - Dimension 1: Health Category (e.g., Healthy, Warning, Error) - GROUP BY
+ * - Dimension 1: Status Category (e.g., Healthy, Warning, Error) - GROUP BY
+ * - Dimension 2 (optional): Order column - for sorting and color assignment
  * - Measure 1: Record count (COUNT aggregation) - for legend counts
- * - Measure 2: Average health score (AVERAGE aggregation) - for center KPI
+ * - Measure 2: Average score (AVERAGE aggregation) - for center KPI
  *
- * Data structure returned: [Category, Count, AvgScore]
+ * Data structure returned:
+ *  - With order: [Category, Order, Count, AvgScore]
+ *  - Without order: [Category, Count, AvgScore]
  *
- * Display order is hardcoded: Healthy (Green), Warning (Yellow), Error (Red)
+ * Display order: uses order column if provided, otherwise: Healthy, Warning, Error
  *
  * User must create a formula column in Luzmo:
- * IF([Health_Score] >= 81, 'Healthy', IF([Health_Score] >= 51, 'Warning', 'Error'))
+ * IF([Score] >= 81, 'Healthy', IF([Score] >= 51, 'Warning', 'Error'))
  */
 export const buildQuery = ({
   slots = [],
@@ -730,6 +808,7 @@ export const buildQuery = ({
   const categorySlot = slots.find(s => s.name === 'category');
   const sizeSlot = slots.find(s => s.name === 'size');
   const measureSlot = slots.find(s => s.name === 'measure');
+  const orderSlot = slots.find(s => s.name === 'order');
 
   if (!categorySlot?.content || categorySlot.content.length === 0 ||
       !sizeSlot?.content || sizeSlot.content.length === 0 ||
@@ -744,13 +823,23 @@ export const buildQuery = ({
   const dimensions: any[] = [];
   const measures: any[] = [];
 
-  // Add health category column as dimension (GROUP BY)
+  // Add category column as dimension (GROUP BY)
   const categoryColumn = categorySlot.content[0];
   dimensions.push({
     dataset_id: categoryColumn.datasetId || (categoryColumn as any).set,
     column_id: categoryColumn.columnId || (categoryColumn as any).column,
     level: categoryColumn.level || 1
   });
+
+  // Add order column as dimension if provided (for sorting and color assignment)
+  if (orderSlot?.content && orderSlot.content.length > 0) {
+    const orderColumn = orderSlot.content[0];
+    dimensions.push({
+      dataset_id: orderColumn.datasetId || (orderColumn as any).set,
+      column_id: orderColumn.columnId || (orderColumn as any).column,
+      level: 1
+    });
+  }
 
   // Add size measure (Measure 1) - for legend counts
   const sizeColumn = sizeSlot.content[0];

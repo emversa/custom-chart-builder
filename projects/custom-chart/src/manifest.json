@@ -3,8 +3,8 @@
     {
       "name": "category",
       "rotate": false,
-      "label": "Health Category",
-      "description": "Add a categorical health status column (e.g., Healthy, Warning, Error). Create a formula in Luzmo: IF([Score] >= 81, 'Healthy', IF([Score] >= 51, 'Warning', 'Error')). Each unique value will appear in the legend with its count.",
+      "label": "Status Category",
+      "description": "Add a categorical status column (e.g., Healthy, Warning, Error). Create a formula in Luzmo: IF([Score] >= 81, 'Healthy', IF([Score] >= 51, 'Warning', 'Error')). Each unique value will appear in the legend with its count.",
       "type": "categorical",
       "order": 1,
       "isRequired": true,
@@ -16,7 +16,7 @@
       "name": "size",
       "rotate": false,
       "label": "Record Count",
-      "description": "Add any column with COUNT aggregation to count records per category. This shows in the legend (e.g., '500' next to Healthy). Typically use an ID column or any column with COUNT aggregation.",
+      "description": "Add any column with COUNT aggregation to count records per category. This shows in the legend (e.g., '500'). Typically use an ID column or any column with COUNT aggregation.",
       "type": "numeric",
       "order": 2,
       "options": {
@@ -30,8 +30,8 @@
     {
       "name": "measure",
       "rotate": false,
-      "label": "Health Score (for Center KPI)",
-      "description": "Add the numeric health score column with AVERAGE aggregation. This displays in the center of the donut chart (e.g., '72'). Must use AVERAGE aggregation for weighted average calculation.",
+      "label": "Metric Value (for Center KPI)",
+      "description": "Add the numeric metric column with AVERAGE aggregation. This displays in the center of the donut chart (e.g., '72'). Must use AVERAGE aggregation for weighted average calculation.",
       "type": "numeric",
       "order": 3,
       "options": {
@@ -43,15 +43,27 @@
       "position": "middle"
     },
     {
+      "name": "order",
+      "rotate": false,
+      "label": "Order (Optional)",
+      "description": "Add a numeric column (e.g., _ORDER) to control color assignment and display order. 0=Healthy, 1=Warning, 2=Error, etc. If omitted, uses hardcoded order: Healthy, Warning, Error.",
+      "type": "numeric",
+      "order": 4,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["numeric"],
+      "position": "bottom-left"
+    },
+    {
       "name": "legend",
       "rotate": false,
       "label": "Title (Optional)",
       "description": "Add any column to use its name as the chart title. The column NAME will be displayed (not its values). If omitted, shows default title.",
-      "type": "categorical",
-      "order": 4,
+      "type": "numeric",
+      "order": 5,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
+      "acceptableColumnTypes": ["numeric", "hierarchy"],
       "position": "bottom-right"
     }
   ]
