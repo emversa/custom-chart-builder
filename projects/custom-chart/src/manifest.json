@@ -1,31 +1,58 @@
 {
   "slots": [
     {
-      "name": "measure",
+      "name": "category",
       "rotate": false,
-      "label": "Health Score",
-      "description": "Add a numeric column containing health scores (0-100). Scores are categorized as: Healthy (81-100), Warning (51-80), Error (0-50).",
-      "type": "numeric",
+      "label": "Health Category",
+      "description": "Add a categorical health status column (e.g., Healthy, Warning, Error). Create a formula in Luzmo: IF([Score] >= 81, 'Healthy', IF([Score] >= 51, 'Warning', 'Error')). Each unique value will appear in the legend with its count.",
+      "type": "categorical",
       "order": 1,
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "top-left"
+    },
+    {
+      "name": "size",
+      "rotate": false,
+      "label": "Record Count",
+      "description": "Add any column with COUNT aggregation to count records per category. This shows in the legend (e.g., '500' next to Healthy). Typically use an ID column or any column with COUNT aggregation.",
+      "type": "numeric",
+      "order": 2,
+      "options": {
+        "isAggregationDisabled": false
+      },
       "isRequired": true,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["numeric"],
       "position": "middle"
     },
     {
-      "name": "category",
+      "name": "measure",
       "rotate": false,
-      "label": "Record ID (Optional)",
-      "description": "Add a unique identifier column (ID, timestamp, etc.) to ensure all records are counted. This prevents data aggregation.",
-      "type": "categorical",
-      "order": 2,
+      "label": "Health Score (for Center KPI)",
+      "description": "Add the numeric health score column with AVERAGE aggregation. This displays in the center of the donut chart (e.g., '72'). Must use AVERAGE aggregation for weighted average calculation.",
+      "type": "numeric",
+      "order": 3,
       "options": {
-        "isBinningDisabled": true
+        "isAggregationDisabled": false
       },
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["numeric"],
+      "position": "middle"
+    },
+    {
+      "name": "legend",
+      "rotate": false,
+      "label": "Title (Optional)",
+      "description": "Add any column to use its name as the chart title. The column NAME will be displayed (not its values). If omitted, shows default title.",
+      "type": "categorical",
+      "order": 4,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy", "datetime", "numeric"],
-      "position": "top-left"
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "bottom-right"
     }
   ]
 }

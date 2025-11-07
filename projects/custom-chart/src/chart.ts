@@ -23,10 +23,12 @@ interface ChartState {
   categories: StatusCategory[];
   total: number;
   aggregatedScore: number; // The aggregated score to display in center
-  measureSlot?: Slot;
+  categorySlot?: Slot;
+  sizeSlot?: Slot; // For COUNT of records per category
+  measureSlot?: Slot; // For AVERAGE health score
   legendSlot?: Slot;
-  allScores: number[]; // Store all raw scores for filtering
-  selectedCategory?: 'Healthy' | 'Warning' | 'Error' | null; // Track selected filter
+  selectedCategory?: string | null; // Track selected filter
+  title?: string;
 }
 
 interface ThemeContext {
@@ -97,31 +99,53 @@ function sendCustomEvent(data: any): void {
 }
 
 /**
- * Categorize a score into health status
- * Healthy: 81-100
- * Warning: 51-80
- * Error: 0-50
+ * Extract column label from slot content
  */
-function categorizeScore(score: number): 'Healthy' | 'Warning' | 'Error' {
-  if (score >= 81) return 'Healthy';
-  if (score >= 51) return 'Warning';
-  return 'Error';
+function extractColumnLabel(column: any, language: string, fallback = 'Category'): string {
+  if (typeof column.label === 'object' && column.label !== null) {
+    return column.label.en || column.label[language] || Object.values(column.label)[0] || fallback;
+  }
+  if (column.label) {
+    return String(column.label);
+  }
+  if (column.columnId) {
+    return String(column.columnId);
+  }
+  return fallback;
+}
+
+/**
+ * Format title: remove underscores and capitalize first letter of each word
+ */
+function formatTitle(title: string): string {
+  return title
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map(word => {
+      if (word.length === 0) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
 }
 
 /**
  * Process data from slots into StatusCategory array
+ * Uses server-side aggregated health category data
  *
  * LOGIC:
- * 1. Input: Multiple rows with health scores (e.g., 1000 records)
- * 2. For each score, categorize into: Healthy (81-100), Warning (51-80), Error (0-50)
- * 3. Legend shows: COUNT of records in each category
- * 4. Center shows: AVERAGE (aggregated) score across all records
+ * 1. Input: Aggregated rows with [Health Category, Count, Avg Score]
+ * 2. Read pre-aggregated values directly from server
+ * 3. Legend shows: COUNT of records per health category (from count measure)
+ * 4. Center shows: AVERAGE health score (weighted average from avgScore measure)
+ * 5. Display order is hardcoded: Healthy (Green), Warning (Yellow), Error (Red)
  *
- * Example: 1000 records
- *  - 500 records with scores 81-100 → Healthy count = 500
- *  - 300 records with scores 51-80 → Warning count = 300
- *  - 200 records with scores 0-50 → Error count = 200
- *  - Center displays: Average of all 1000 scores (e.g., 72)
+ * Data structure: [Category, Count, AvgScore]
+ *
+ * Example: Server returns 3 rows (already aggregated)
+ *  - ["Healthy", 500, 87.5] → Healthy count = 500, avg = 87.5
+ *  - ["Warning", 300, 65.2] → Warning count = 300, avg = 65.2
+ *  - ["Error", 200, 35.8] → Error count = 200, avg = 35.8
+ *  - Center displays: Weighted average = (500*87.5 + 300*65.2 + 200*35.8) / 1000 = 72
  */
 function processData(
   data: ItemData['data'],
@@ -129,6 +153,8 @@ function processData(
   colors: string[],
   language: string
 ): ChartState {
+  const categorySlot = slots.find(s => s.name === 'category');
+  const sizeSlot = slots.find(s => s.name === 'size');
   const measureSlot = slots.find(s => s.name === 'measure');
   const legendSlot = slots.find(s => s.name === 'legend');
 
@@ -137,89 +163,115 @@ function processData(
   const warningColor = '#FEC325';  // Yellow
   const errorColor = '#BA1A1A';    // Red
 
-  // Track COUNT of records in each category
-  const categoryCounts = {
-    'Healthy': 0,
-    'Warning': 0,
-    'Error': 0
+  // Default color mapping
+  const colorMapping: Record<string, string> = {
+    'Healthy': healthyColor,
+    'Warning': warningColor,
+    'Error': errorColor
   };
 
-  let scores: number[] = [];
+  // Track aggregated data per category
+  const categoryData: Record<string, { count: number; avgScore: number }> = {};
 
-  // Process data - expecting one score column with multiple rows (e.g., 1000 records)
-  if (measureSlot?.content && measureSlot.content.length > 0 && data.length > 0) {
-    // Get the first (and should be only) measure column
-    const scoreColumn = measureSlot.content[0];
+  const hasTitleColumn = legendSlot?.content && legendSlot.content.length > 0;
 
-    // Check if we have a dimension column (ID) - if so, score is at index 1, otherwise index 0
-    const categorySlot = slots.find(s => s.name === 'category');
-    const hasDimension = categorySlot?.content && categorySlot.content.length > 0;
-    const scoreIndex = hasDimension ? 1 : 0;
+  // Process data - data is already aggregated by server
+  if (categorySlot?.content && categorySlot.content.length > 0 &&
+      sizeSlot?.content && sizeSlot.content.length > 0 &&
+      measureSlot?.content && measureSlot.content.length > 0 &&
+      data && data.length > 0) {
 
-    // Process each row: categorize the score and count it
+    // Data structure: [Category, Count, AvgScore]
     data.forEach((row) => {
-      const scoreValue = Number(row[scoreIndex]) || 0;
-      scores.push(scoreValue);
+      const categoryObj = row[0];
+      const sizeObj = row[1];
+      const avgScoreObj = row[2];
 
-      // Categorize this record and increment the count
-      const category = categorizeScore(scoreValue);
-      categoryCounts[category]++;
+      // Extract display name from category object
+      let categoryValue: string;
+      if (categoryObj && typeof categoryObj === 'object' && 'name' in categoryObj) {
+        const nameObj = categoryObj.name;
+        if (typeof nameObj === 'object' && nameObj !== null) {
+          categoryValue = String(nameObj[language] ?? nameObj.en ?? Object.values(nameObj)[0] ?? categoryObj.id ?? 'Unknown');
+        } else {
+          categoryValue = String(nameObj ?? categoryObj.id ?? 'Unknown');
+        }
+      } else {
+        categoryValue = String(categoryObj?.id ?? categoryObj ?? 'Unknown');
+      }
+
+      // Extract count value
+      let countValue = 0;
+      if (typeof sizeObj === 'number') {
+        countValue = sizeObj;
+      } else if (typeof sizeObj === 'object' && sizeObj !== null && 'id' in sizeObj) {
+        countValue = Number(sizeObj.id);
+      } else {
+        countValue = Number(sizeObj);
+      }
+
+      // Extract average score value
+      let avgScoreValue = 0;
+      if (typeof avgScoreObj === 'number') {
+        avgScoreValue = avgScoreObj;
+      } else if (typeof avgScoreObj === 'object' && avgScoreObj !== null && 'id' in avgScoreObj) {
+        avgScoreValue = Number(avgScoreObj.id);
+      } else {
+        avgScoreValue = Number(avgScoreObj);
+      }
+
+      // Store both count and average score
+      categoryData[categoryValue] = { count: countValue, avgScore: avgScoreValue };
     });
   }
 
-  // Fallback: sample data (12 records for demo)
-  if (scores.length === 0) {
-    scores = [95, 87, 92, 78, 65, 45, 32, 88, 91, 56, 72, 38];
-    scores.forEach(score => {
-      const category = categorizeScore(score);
-      categoryCounts[category]++;
-    });
+  // Extract title from title slot column name only if provided
+  const customTitle = hasTitleColumn && legendSlot?.content?.[0]
+    ? formatTitle(extractColumnLabel(legendSlot.content[0], language, ''))
+    : undefined;
+
+  // Fallback: sample data
+  if (Object.keys(categoryData).length === 0) {
+    categoryData['Healthy'] = { count: 6, avgScore: 87 };
+    categoryData['Warning'] = { count: 4, avgScore: 65 };
+    categoryData['Error'] = { count: 2, avgScore: 35 };
   }
 
-  // Calculate aggregated score = AVERAGE of all scores
-  const aggregatedScore = scores.length > 0
-    ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
-    : 0;
+  // Hardcoded order: Healthy, Warning, Error
+  const orderedCategoryNames = ['Healthy', 'Warning', 'Error'];
+  const uniqueCategories = orderedCategoryNames.filter(cat => categoryData[cat] !== undefined);
 
-  // Total = number of records processed
-  const total = scores.length;
+  // Calculate total count and weighted average score
+  const total = uniqueCategories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
+  const weightedSum = uniqueCategories.reduce((sum, cat) =>
+    sum + (categoryData[cat].count * categoryData[cat].avgScore), 0);
+  const aggregatedScore = total > 0 ? Math.round(weightedSum / total) : 0;
 
-  // Build categories array
-  const categories: StatusCategory[] = [
-    {
-      name: 'Healthy (81-100)',
-      count: categoryCounts['Healthy'],
-      color: healthyColor,
-      columnId: measureSlot?.content?.[0]?.columnId,
-      datasetId: measureSlot?.content?.[0]?.datasetId,
-      value: 'Healthy'
-    },
-    {
-      name: 'Warning (51-80)',
-      count: categoryCounts['Warning'],
-      color: warningColor,
-      columnId: measureSlot?.content?.[0]?.columnId,
-      datasetId: measureSlot?.content?.[0]?.datasetId,
-      value: 'Warning'
-    },
-    {
-      name: 'Error (0-50)',
-      count: categoryCounts['Error'],
-      color: errorColor,
-      columnId: measureSlot?.content?.[0]?.columnId,
-      datasetId: measureSlot?.content?.[0]?.datasetId,
-      value: 'Error'
-    }
-  ];
+  // Build categories array with hardcoded colors
+  const categories: StatusCategory[] = uniqueCategories.map(categoryValue => {
+    // Use color mapping for fixed colors: Healthy=Green, Warning=Yellow, Error=Red
+    const color = colorMapping[categoryValue] || healthyColor;
+
+    return {
+      name: categoryValue,
+      count: categoryData[categoryValue].count,
+      color: color,
+      columnId: categorySlot?.content?.[0]?.columnId,
+      datasetId: categorySlot?.content?.[0]?.datasetId,
+      value: categoryValue
+    };
+  });
 
   return {
     categories,
     total,
     aggregatedScore,
+    categorySlot,
+    sizeSlot,
     measureSlot,
     legendSlot,
-    allScores: scores, // Store all scores for filtering
-    selectedCategory: null // No filter by default
+    selectedCategory: null,
+    title: customTitle
   };
 }
 
@@ -305,10 +357,10 @@ function renderWidget(
 
   container.appendChild(widget);
 
-  // Add title
+  // Add title (use custom title if provided, otherwise default)
   const title = document.createElement('div');
   title.className = 'widget-title';
-  title.textContent = 'Health Score Status';
+  title.textContent = state.title || 'Health Score Status';
   title.style.color = theme.textColor;
   widget.appendChild(title);
 
@@ -596,7 +648,8 @@ function addInteractionHandlers(
 }
 
 /**
- * Handle category click for filtering and recalculation
+ * Handle category click for filtering
+ * Component display stays static - filtering only affects other dashboard components
  */
 function handleCategoryClick(
   category: StatusCategory,
@@ -607,58 +660,18 @@ function handleCategoryClick(
   height: number
 ): void {
   // Toggle selection: if clicking same category, deselect it
-  const clickedValue = category.value as 'Healthy' | 'Warning' | 'Error';
+  const clickedValue = category.value!;
   const wasSelected = state.selectedCategory === clickedValue;
 
   // Update selection state
   state.selectedCategory = wasSelected ? null : clickedValue;
 
-  // Recalculate based on selection
-  let filteredScores: number[];
-  let newAggregatedScore: number;
-  let newTotal: number;
-
-  if (state.selectedCategory) {
-    // Filter scores based on selected category
-    filteredScores = state.allScores.filter(score => {
-      const cat = categorizeScore(score);
-      return cat === state.selectedCategory;
-    });
-    newTotal = filteredScores.length;
-    newAggregatedScore = newTotal > 0
-      ? Math.round(filteredScores.reduce((sum, score) => sum + score, 0) / newTotal)
-      : 0;
-  } else {
-    // Show all data
-    filteredScores = state.allScores;
-    newTotal = state.allScores.length;
-    newAggregatedScore = newTotal > 0
-      ? Math.round(filteredScores.reduce((sum, score) => sum + score, 0) / newTotal)
-      : 0;
-  }
-
-  // Update state
-  state.total = newTotal;
-  state.aggregatedScore = newAggregatedScore;
-
-  // Recalculate category counts based on filtered data
-  const newCounts = { 'Healthy': 0, 'Warning': 0, 'Error': 0 };
-  filteredScores.forEach(score => {
-    const cat = categorizeScore(score);
-    newCounts[cat]++;
-  });
-
-  // Update category counts
-  state.categories.forEach(cat => {
-    cat.count = newCounts[cat.value as 'Healthy' | 'Warning' | 'Error'];
-  });
-
-  // Re-render the widget with updated state
+  // Re-render the widget to update selection highlighting
   renderWidget(container, state, theme, width, height);
 
   // Send custom event
   sendCustomEvent({
-    eventType: 'statusCategorySelected',
+    eventType: 'healthCategorySelected',
     category: category.name,
     count: category.count,
     totalRecords: state.total,
@@ -666,79 +679,25 @@ function handleCategoryClick(
     isFiltered: state.selectedCategory !== null
   });
 
-  // Also send filter event to dashboard (only if category is selected, not deselected)
-  if (state.selectedCategory && state.measureSlot?.content && state.measureSlot.content.length > 0) {
-    const column = state.measureSlot.content[0];
-    let filters: ItemFilter[] = [];
-
-    // Determine the score range based on category
-    if (clickedValue === 'Healthy') {
-      filters = [{
-        expression: '? >= ?',
-        parameters: [
-          {
-            column_id: column.columnId,
-            dataset_id: column.datasetId
-          },
-          81
-        ],
-        properties: {
-          origin: 'filterFromVizItem',
-          type: 'where'
-        }
-      }];
-    } else if (clickedValue === 'Warning') {
-      // Filter for scores >= 51 AND <= 80 using two filters
-      filters = [
+  // Send filter event to dashboard (only if category is selected, not deselected)
+  if (state.selectedCategory && state.categorySlot?.content && state.categorySlot.content.length > 0) {
+    const column = state.categorySlot.content[0];
+    const filters: ItemFilter[] = [{
+      expression: '? = ?',
+      parameters: [
         {
-          expression: '? >= ?',
-          parameters: [
-            {
-              column_id: column.columnId,
-              dataset_id: column.datasetId
-            },
-            51
-          ],
-          properties: {
-            origin: 'filterFromVizItem',
-            type: 'where'
-          }
+          column_id: column.columnId,
+          dataset_id: column.datasetId
         },
-        {
-          expression: '? <= ?',
-          parameters: [
-            {
-              column_id: column.columnId,
-              dataset_id: column.datasetId
-            },
-            80
-          ],
-          properties: {
-            origin: 'filterFromVizItem',
-            type: 'where'
-          }
-        }
-      ];
-    } else if (clickedValue === 'Error') {
-      filters = [{
-        expression: '? < ?',
-        parameters: [
-          {
-            column_id: column.columnId,
-            dataset_id: column.datasetId
-          },
-          51
-        ],
-        properties: {
-          origin: 'filterFromVizItem',
-          type: 'where'
-        }
-      }];
-    }
+        clickedValue
+      ],
+      properties: {
+        origin: 'filterFromVizItem',
+        type: 'where'
+      }
+    }];
 
-    if (filters.length > 0) {
-      sendFilterEvent(filters);
-    }
+    sendFilterEvent(filters);
   } else if (!state.selectedCategory) {
     // Clear filter when deselected
     sendFilterEvent([]);
@@ -747,16 +706,19 @@ function handleCategoryClick(
 
 /**
  * Build query for data retrieval
+ * Uses server-side aggregation for measures
  *
- * CRITICAL: We need ROW-LEVEL data (not aggregated) to count records in each health category
+ * Query structure:
+ * - Dimension 1: Health Category (e.g., Healthy, Warning, Error) - GROUP BY
+ * - Measure 1: Record count (COUNT aggregation) - for legend counts
+ * - Measure 2: Average health score (AVERAGE aggregation) - for center KPI
  *
- * To get row-level data from Luzmo, we MUST have a dimension (like ID or timestamp)
- * Without a dimension, Luzmo will aggregate all measures into a single row!
+ * Data structure returned: [Category, Count, AvgScore]
  *
- * Example with ID dimension:
- * - Input: 1000 records with [ID, Score]
- * - Output: 1000 rows, each with a unique ID and its score
- * - We can then count: 800 Healthy, 150 Warning, 50 Error
+ * Display order is hardcoded: Healthy (Green), Warning (Yellow), Error (Red)
+ *
+ * User must create a formula column in Luzmo:
+ * IF([Health_Score] >= 81, 'Healthy', IF([Health_Score] >= 51, 'Warning', 'Error'))
  */
 export const buildQuery = ({
   slots = [],
@@ -765,42 +727,64 @@ export const buildQuery = ({
   slots: Slot[];
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
-  const measureSlot = slots.find(s => s.name === 'measure');
   const categorySlot = slots.find(s => s.name === 'category');
+  const sizeSlot = slots.find(s => s.name === 'size');
+  const measureSlot = slots.find(s => s.name === 'measure');
 
-  if (!measureSlot?.content || measureSlot.content.length === 0) {
+  if (!categorySlot?.content || categorySlot.content.length === 0 ||
+      !sizeSlot?.content || sizeSlot.content.length === 0 ||
+      !measureSlot?.content || measureSlot.content.length === 0) {
     return {
       dimensions: [],
       measures: [],
-      limit: { by: 10000, offset: 0 }
+      order: []
     };
   }
 
-  const scoreColumn = measureSlot.content[0];
   const dimensions: any[] = [];
   const measures: any[] = [];
 
-  // Add the ID/dimension column if provided - THIS IS CRITICAL for row-level data
-  if (categorySlot?.content && categorySlot.content.length > 0) {
-    const idColumn = categorySlot.content[0];
-    dimensions.push({
-      dataset_id: idColumn.datasetId || (idColumn as any).set,
-      column_id: idColumn.columnId || (idColumn as any).column,
-      level: idColumn.level || 1
-    });
+  // Add health category column as dimension (GROUP BY)
+  const categoryColumn = categorySlot.content[0];
+  dimensions.push({
+    dataset_id: categoryColumn.datasetId || (categoryColumn as any).set,
+    column_id: categoryColumn.columnId || (categoryColumn as any).column,
+    level: categoryColumn.level || 1
+  });
+
+  // Add size measure (Measure 1) - for legend counts
+  const sizeColumn = sizeSlot.content[0];
+  const sizeMeasureDef: any = {
+    dataset_id: sizeColumn.datasetId || (sizeColumn as any).set,
+    column_id: sizeColumn.columnId || (sizeColumn as any).column
+  };
+
+  // Add aggregation if specified
+  if (sizeColumn.aggregationFunc && ['sum', 'average', 'min', 'max', 'count'].includes(sizeColumn.aggregationFunc)) {
+    sizeMeasureDef.aggregation = { type: sizeColumn.aggregationFunc };
   }
 
-  // Add the score column as a measure without aggregation
-  measures.push({
-    dataset_id: scoreColumn.datasetId || (scoreColumn as any).set,
-    column_id: scoreColumn.columnId || (scoreColumn as any).column,
-    // No aggregation - just return the raw values
-  });
+  measures.push(sizeMeasureDef);
+
+  // Add measure column (Measure 2) - for center KPI average score
+  const measureColumn = measureSlot.content[0];
+  const measureDef: any = {
+    dataset_id: measureColumn.datasetId || (measureColumn as any).set,
+    column_id: measureColumn.columnId || (measureColumn as any).column
+  };
+
+  // Add aggregation if specified
+  if (measureColumn.aggregationFunc && ['sum', 'average', 'min', 'max', 'count'].includes(measureColumn.aggregationFunc)) {
+    measureDef.aggregation = { type: measureColumn.aggregationFunc };
+  }
+
+  measures.push(measureDef);
+
+  // Note: Title slot is NOT added to query - we only use the column name from slot metadata
 
   return {
     dimensions,
     measures,
     order: []
-    // No limit - process all records
   };
 };
