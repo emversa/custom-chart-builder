@@ -123,6 +123,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.center-score {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Donut chart */
 .donut-chart {
   display: block;
@@ -238,6 +242,47 @@
   .category-indicator {
     height: 36px;
   }
+}
+
+/* Vertical layout - applied when height > width (aspect ratio check) */
+.widget-content.layout-vertical {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  min-height: auto;
+}
+
+.widget-content.layout-vertical .categories-section {
+  order: 2;
+  width: 100%;
+  padding-right: 0;
+  justify-content: center;
+}
+
+.widget-content.layout-vertical .chart-section {
+  order: 1;
+  margin-right: 0;
+  padding: 0;
+}
+
+.widget-content.layout-vertical .categories-list {
+  gap: 12px;
+  max-width: 100%;
+  min-height: auto;
+  justify-content: center;
+}
+
+.widget-content.layout-vertical .category-count {
+  font-size: clamp(20px, 5vw, 24px);
+}
+
+.widget-content.layout-vertical .category-label {
+  font-size: clamp(11px, 2.5vw, 12px);
+}
+
+.widget-content.layout-vertical .category-indicator {
+  height: clamp(32px, 5vh, 36px);
 }
 
 /* Responsive adjustments for very small screens */

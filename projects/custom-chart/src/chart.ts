@@ -269,9 +269,9 @@ export const resize = ({
  * Get background color based on aggregated score
  */
 function getBackgroundColor(score: number): string {
-  if (score >= 81) return '#DDF3CD'; // Healthy
-  if (score >= 51) return '#FFEFD4'; // Warning
-  return '#FFE2E4'; // Error
+  if (score >= 81) return '#F3FBED'; // Healthy
+  if (score >= 51) return '#FFF9F0'; // Warning
+  return '#FFF6F7'; // Error
 }
 
 /**
@@ -315,10 +315,13 @@ function renderWidget(
   // Create content wrapper for categories and chart
   const contentWrapper = document.createElement('div');
   contentWrapper.className = 'widget-content';
-  widget.appendChild(contentWrapper);
 
-  // Always use horizontal layout - never stack vertically
-  contentWrapper.classList.add('desktop-layout');
+  // Determine layout based on aspect ratio: vertical if height > width, horizontal otherwise
+  if (height > width) {
+    contentWrapper.classList.add('layout-vertical');
+  }
+
+  widget.appendChild(contentWrapper);
 
   // Render categories list FIRST (left side)
   const listContainer = document.createElement('div');
@@ -366,7 +369,9 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 }
 
 /**
- * Render the donut chart with center percentage
+ * Render the donut chart with center metric
+ * Dynamic sizing: takes 45% of component width (scales with container)
+ * Dynamic stroke: matches kpi-with-donut stroke calculation
  */
 function renderDonutChart(
   container: HTMLElement,
@@ -374,11 +379,16 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  // Scale donut size based on container, optimized for horizontal layout
-  // At small sizes, donut should be smaller to fit alongside legend
+  // Scale donut size based on container width (45% of component)
+  // Minimum 80px, maximum 260px for optimal display
   const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
+
+  // Dynamic stroke width: 20px base at 120px size, scales proportionally
+  // Minimum 10px to prevent being too thin at small sizes
+  const strokeWidth = Math.max(Math.floor(size * 0.1667), 10);
+
   const radius = size / 2;
-  const innerRadius = radius * 0.6;
+  const innerRadius = radius - strokeWidth;
 
   const svg = d3.select(container)
     .append('svg')
@@ -489,17 +499,21 @@ function renderDonutChart(
       tooltip.style('opacity', 0);
     });
 
-  // Center text - aggregated score (perfectly centered)
+  // Center text - aggregated score with configurable decimal places
+  const centerText = state.aggregatedScore.toFixed(0); // No decimals by default, can be made configurable
+  const fontSize = radius * 0.48; // Slightly smaller for numbers without %
+
   g.append('text')
     .attr('class', 'center-score')
     .attr('text-anchor', 'middle')
     .attr('dominant-baseline', 'central')
     .attr('x', 0)
     .attr('y', 0)
-    .style('font-size', `${radius * 0.5}px`)
-    .style('font-weight', '300')
+    .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
+    .style('font-size', `${fontSize}px`)
+    .style('font-weight', '500')
     .style('fill', theme.textColor)
-    .text(`${state.aggregatedScore}`);
+    .text(centerText);
 }
 
 /**
