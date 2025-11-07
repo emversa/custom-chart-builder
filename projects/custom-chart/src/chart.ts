@@ -492,7 +492,7 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 }
 
 /**
- * Render the donut chart with center metric
+ * Render the donut chart with center metric - Figma specs
  */
 function renderDonutChart(
   container: HTMLElement,
@@ -500,11 +500,11 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  // Adaptive sizing based on container width
-  const size = Math.max(80, Math.min(260, containerWidth * 0.5));
+  // Fixed size from Figma: 120px x 120px
+  const size = 120;
 
-  // Stroke width proportional to size
-  const strokeWidth = size * 0.16;
+  // Stroke width: 20px (proportional to 120px size)
+  const strokeWidth = 20;
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -573,8 +573,8 @@ function renderDonutChart(
   segments.append('path')
     .attr('d', arc)
     .attr('fill', d => d.data.color)
-    .attr('stroke', d => d.data.name === '__empty__' ? 'none' : theme.backgroundColor)
-    .attr('stroke-width', d => d.data.name === '__empty__' ? 0 : 2)
+    .attr('stroke', d => d.data.name === '__empty__' ? 'none' : '#FFF')
+    .attr('stroke-width', d => d.data.name === '__empty__' ? 0 : 1)
     .attr('data-category', d => d.data.name)
     .style('cursor', d => d.data.name === '__empty__' ? 'default' : 'pointer')
     .style('transition', 'all 0.3s ease')
@@ -648,8 +648,9 @@ function renderDonutChart(
       tooltip.style('opacity', 0);
     });
 
-  // Center text - animated aggregated score
-  const fontSize = radius * 0.48; // Dynamic font size based on donut size
+  // Center text - animated aggregated score - Figma: display-3
+  const fontSize = 40; // Fixed from Figma
+  const lineHeight = 46; // Fixed from Figma
   const targetValue = state.aggregatedScore;
 
   // Get previous value for smooth transition (default to 0 on first render)
@@ -662,10 +663,6 @@ function renderDonutChart(
     .attr('dominant-baseline', 'central')
     .attr('x', 0)
     .attr('y', 0)
-    .style('font-family', 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
-    .style('font-size', `${fontSize}px`)
-    .style('font-weight', '500')
-    .style('fill', theme.textColor)
     .text(previousValue.toFixed(0));
 
   // Animate the number counting up
@@ -717,13 +714,11 @@ function renderCategoriesList(
 
     const label = document.createElement('div');
     label.className = 'category-label';
-    label.style.color = theme.textColor;
     label.textContent = category.name;
     content.appendChild(label);
 
     const count = document.createElement('div');
     count.className = 'category-count';
-    count.style.color = theme.textColor;
     count.textContent = category.count.toLocaleString();
     content.appendChild(count);
 

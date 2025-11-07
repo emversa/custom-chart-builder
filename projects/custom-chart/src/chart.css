@@ -1,78 +1,66 @@
-/* Status Widget Styles */
+/* Status Widget Styles - Figma Specs */
 
 .status-widget {
+  display: flex;
   width: 100%;
   height: 100%;
-  display: flex;
+  padding: 16px;
   flex-direction: column;
-  padding: clamp(12px, 3vh, 20px);
-  gap: clamp(8px, 2vh, 20px);
+  align-items: flex-start;
+  gap: 16px;
+  border-radius: var(--l, 16px);
   box-sizing: border-box;
-  border-radius: 16px;
   overflow: visible;
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   /* Background color is set dynamically via inline style based on score */
 }
 
-/* Widget title */
+/* Widget title - Figma: heading-3 */
 .widget-title {
-  font-size: clamp(16px, 4vw, 20px);
-  font-weight: 500;
-  opacity: 1;
-  letter-spacing: -0.02em;
+  color: var(--Text-onLight-primary, #181C20);
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--heading-3-font-size, 18px);
+  font-style: normal;
+  font-weight: var(--heading-3-font-weight, 500);
+  line-height: var(--heading-3-line-height, 24px);
+  letter-spacing: var(--heading-3-letter-spacing, 0);
 }
 
-/* Content wrapper for categories and chart - always horizontal */
+/* Content wrapper for categories and chart - Figma: Frame 1010107450 */
 .widget-content {
-  flex: 1;
   display: flex;
-  flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  gap: clamp(2px, 1vw, 8px);
+  gap: 51px;
+  flex: 1 0 0;
+  align-self: stretch;
   overflow: visible;
-  min-height: 0;
 }
 
 .widget-content .categories-section {
-  flex: 1 1 auto;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  min-width: 0;
-  padding-right: clamp(12px, 2vw, 24px);
 }
 
 .widget-content .chart-section {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: clamp(4px, 1vh, 12px);
-  overflow: visible;
-  margin-right: clamp(-8px, -1vw, -12px);
 }
 
-/* Categories list - allow more space to prevent text wrapping */
+/* Categories list - Figma: Frame 1010107450 (nested) */
 .categories-list {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  width: 100%;
-  max-width: 400px;
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
+/* Category row - Figma: Key Row */
 .category-item {
   display: flex;
   align-items: center;
-  gap: clamp(8px, 1.5vw, 12px);
+  gap: 8px;
   cursor: pointer;
-  padding: clamp(4px, 1vh, 8px) clamp(8px, 1.5vw, 12px);
-  border-radius: 8px;
   transition: all 0.25s ease;
-  position: relative;
 }
 
 .category-item:hover {
@@ -90,46 +78,70 @@
   transform: translateX(4px);
 }
 
-/* Color indicator bar */
+/* Color indicator bar - Figma: Legend */
 .category-indicator {
   width: 4px;
-  height: clamp(28px, 5vh, 40px);
-  border-radius: 2px;
+  align-self: stretch;
+  border-radius: 2px 0 0 2px;
   flex-shrink: 0;
+  /* Background color set dynamically via inline style */
 }
 
-/* Category content */
+/* Category content - Figma: Legend item */
 .category-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0; /* Allow text to shrink */
+  justify-content: center;
+  align-items: center;
 }
 
+/* Category label - Figma: caption-body (Healthy Stores, Warning Stores, Error Stores) */
 .category-label {
-  font-size: clamp(11px, 2.5vw, 13px);
-  font-weight: 300;
-  opacity: 0.8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  align-self: stretch;
+  color: var(--Text-onLight-secondary, rgba(24, 28, 32, 0.60));
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--caption-body-font-size, 12px);
+  font-style: normal;
+  font-weight: var(--caption-body-font-weight, 400);
+  line-height: var(--caption-body-line-height, 16px);
+  letter-spacing: var(--caption-body-letter-spacing, 0.1px);
 }
 
+/* Category count - Figma: heading-3 (00) */
 .category-count {
-  font-size: clamp(20px, 5vw, 28px);
-  font-weight: 300;
-  line-height: 1.2;
+  align-self: stretch;
+  color: var(--Text-onLight-primary, #181C20);
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--heading-3-font-size, 18px);
+  font-style: normal;
+  font-weight: var(--heading-3-font-weight, 500);
+  line-height: var(--heading-3-line-height, 24px);
+  letter-spacing: var(--heading-3-letter-spacing, 0);
   font-variant-numeric: tabular-nums;
 }
 
-.center-score {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Donut chart */
+/* Donut chart - Figma: Chart */
 .donut-chart {
+  display: flex;
+  width: 120px;
+  height: 120px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   overflow: visible;
+}
+
+/* Center score - Figma: display-3 (71) */
+.center-score {
+  color: var(--Text-onLight-primary, #181C20);
+  text-align: center;
+  font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--display-3-font-size, 40px);
+  font-style: normal;
+  font-weight: var(--display-3-font-weight, 500);
+  line-height: var(--display-3-line-height, 46px);
+  letter-spacing: var(--display-3-letter-spacing, 0);
+  font-variant-numeric: tabular-nums;
 }
 
 .chart-section {
