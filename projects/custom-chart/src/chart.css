@@ -6,6 +6,7 @@
   display: flex;
   flex-direction: column;
   padding: clamp(12px, 3vh, 20px);
+  gap: clamp(8px, 2vh, 20px);
   box-sizing: border-box;
   border-radius: 16px;
   overflow: visible;
@@ -17,7 +18,6 @@
 .widget-title {
   font-size: clamp(16px, 4vw, 20px);
   font-weight: 500;
-  margin-bottom: clamp(8px, 2vh, 16px);
   opacity: 1;
   letter-spacing: -0.02em;
 }
@@ -57,7 +57,7 @@
 .categories-list {
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, 1.5vh, 16px);
+  gap: 8px;
   width: 100%;
   max-width: 400px;
   flex: 1 1 auto;
@@ -129,7 +129,6 @@
 
 /* Donut chart */
 .donut-chart {
-  display: block;
   overflow: visible;
 }
 

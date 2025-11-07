@@ -21,7 +21,8 @@ interface StatusCategory {
 
 interface ChartState {
   categories: StatusCategory[];
-  total: number;
+  total: number; // Total count (filtered if category selected)
+  overallTotal: number; // Overall total across all categories (for percentage calculations)
   aggregatedScore: number; // The aggregated score to display in center
   categorySlot?: Slot;
   sizeSlot?: Slot; // For COUNT of records per category
@@ -289,6 +290,9 @@ function processData(
     });
   }
 
+  // Calculate overall total across all categories (for percentage display)
+  const overallTotal = uniqueCategories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
+
   // Filter data if category is selected
   let filteredCategories = uniqueCategories;
   if (selectedCategory) {
@@ -324,6 +328,7 @@ function processData(
   return {
     categories,
     total,
+    overallTotal,
     aggregatedScore,
     categorySlot,
     sizeSlot,
@@ -488,8 +493,6 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 
 /**
  * Render the donut chart with center metric
- * Dynamic sizing: takes 45% of component width (scales with container)
- * Dynamic stroke: matches kpi-with-donut stroke calculation
  */
 function renderDonutChart(
   container: HTMLElement,
@@ -497,13 +500,11 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  // Scale donut size based on container width (45% of component)
-  // Minimum 80px, maximum 260px for optimal display
-  const size = Math.min(Math.max(containerWidth * 0.8, 80), 260);
+  // Adaptive sizing based on container width
+  const size = Math.max(80, Math.min(260, containerWidth * 0.5));
 
-  // Dynamic stroke width: 20px base at 120px size, scales proportionally
-  // Minimum 10px to prevent being too thin at small sizes
-  const strokeWidth = Math.max(Math.floor(size * 0.1667), 10);
+  // Stroke width proportional to size
+  const strokeWidth = size * 0.16;
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -525,6 +526,30 @@ function renderDonutChart(
     .attr('class', 'donut-tooltip')
     .style('opacity', 0);
 
+  // Prepare data for pie chart
+  // If filtered, show selected category + empty segment to show proportion
+  let pieData: StatusCategory[];
+  if (state.selectedCategory) {
+    const selectedCat = state.categories.find(cat => cat.value === state.selectedCategory);
+    if (selectedCat) {
+      // Calculate the "empty" portion
+      const emptyCount = state.overallTotal - selectedCat.count;
+      pieData = [
+        selectedCat,
+        {
+          name: '__empty__',
+          count: emptyCount,
+          color: 'transparent',
+          value: '__empty__'
+        } as StatusCategory
+      ];
+    } else {
+      pieData = state.categories;
+    }
+  } else {
+    pieData = state.categories;
+  }
+
   // Create pie layout
   const pie = d3.pie<StatusCategory>()
     .value(d => d.count)
@@ -540,7 +565,7 @@ function renderDonutChart(
 
   // Render segments
   const segments = g.selectAll('.segment')
-    .data(pie(state.categories))
+    .data(pie(pieData))
     .enter()
     .append('g')
     .attr('class', 'segment');
@@ -548,14 +573,17 @@ function renderDonutChart(
   segments.append('path')
     .attr('d', arc)
     .attr('fill', d => d.data.color)
-    .attr('stroke', theme.backgroundColor)
-    .attr('stroke-width', 2)
+    .attr('stroke', d => d.data.name === '__empty__' ? 'none' : theme.backgroundColor)
+    .attr('stroke-width', d => d.data.name === '__empty__' ? 0 : 2)
     .attr('data-category', d => d.data.name)
-    .style('cursor', 'pointer')
+    .style('cursor', d => d.data.name === '__empty__' ? 'default' : 'pointer')
     .style('transition', 'all 0.3s ease')
-    .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))')
+    .style('filter', d => d.data.name === '__empty__' ? 'none' : 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))')
     .on('mouseover', function(event, d) {
-      const percentage = state.total > 0 ? Math.round((d.data.count / state.total) * 100) : 0;
+      // Skip hover for empty segment
+      if (d.data.name === '__empty__') return;
+
+      const percentage = state.overallTotal > 0 ? Math.round((d.data.count / state.overallTotal) * 100) : 0;
 
       d3.select(this)
         .transition()
@@ -607,7 +635,10 @@ function renderDonutChart(
         .style('left', `${left}px`)
         .style('top', `${top}px`);
     })
-    .on('mouseout', function() {
+    .on('mouseout', function(event, d) {
+      // Skip mouseout for empty segment
+      if (d.data.name === '__empty__') return;
+
       d3.select(this)
         .transition()
         .duration(200)
@@ -617,11 +648,15 @@ function renderDonutChart(
       tooltip.style('opacity', 0);
     });
 
-  // Center text - aggregated score with configurable decimal places
-  const centerText = state.aggregatedScore.toFixed(0); // No decimals by default, can be made configurable
-  const fontSize = radius * 0.48; // Slightly smaller for numbers without %
+  // Center text - animated aggregated score
+  const fontSize = radius * 0.48; // Dynamic font size based on donut size
+  const targetValue = state.aggregatedScore;
 
-  g.append('text')
+  // Get previous value for smooth transition (default to 0 on first render)
+  const previousValue = (container as any).__previousScore || 0;
+  (container as any).__previousScore = targetValue;
+
+  const centerTextElement = g.append('text')
     .attr('class', 'center-score')
     .attr('text-anchor', 'middle')
     .attr('dominant-baseline', 'central')
@@ -631,7 +666,20 @@ function renderDonutChart(
     .style('font-size', `${fontSize}px`)
     .style('font-weight', '500')
     .style('fill', theme.textColor)
-    .text(centerText);
+    .text(previousValue.toFixed(0));
+
+  // Animate the number counting up
+  centerTextElement
+    .transition()
+    .duration(800)
+    .ease(d3.easeCubicOut)
+    .tween('text', function() {
+      const interpolate = d3.interpolateNumber(previousValue, targetValue);
+      return function(t: number) {
+        const currentValue = interpolate(t);
+        d3.select(this).text(Math.round(currentValue).toFixed(0));
+      };
+    });
 }
 
 /**
