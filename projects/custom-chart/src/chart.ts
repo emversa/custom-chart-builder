@@ -19,6 +19,8 @@ interface AlertItem {
   order?: number;
   percentage?: number;
   textColor?: string;
+  borderColor?: string;
+  countColor?: string;
 }
 
 interface ChartState {
@@ -114,16 +116,38 @@ function getBackgroundColor(color: string): string {
 
 /**
  * Get conditional colors based on percentage
- * Returns {backgroundColor, textColor} based on percentage ranges
+ * Returns {backgroundColor, textColor, borderColor, countColor} based on percentage ranges
  */
-function getConditionalColors(percentage: number): { backgroundColor: string; textColor: string } {
+function getConditionalColors(percentage: number): {
+  backgroundColor: string;
+  textColor: string;
+  borderColor: string;
+  countColor: string;
+} {
   if (percentage >= 0 && percentage < 20) {
-    return { backgroundColor: '#E6F6DA', textColor: '#245100' };
+    // Healthy
+    return {
+      backgroundColor: '#E6F6DA',
+      textColor: '#245100',
+      borderColor: '#75BB43',
+      countColor: '#326B00'
+    };
   } else if (percentage >= 20 && percentage <= 51) {
-    return { backgroundColor: '#FFF3DF', textColor: '#785A00' };
+    // Warning
+    return {
+      backgroundColor: '#FFF3DF',
+      textColor: '#785A00',
+      borderColor: '#F5B200',
+      countColor: '#785A00'
+    };
   } else {
-    // 52-100%
-    return { backgroundColor: '#FFEAEB', textColor: '#690005' };
+    // Error (52-100%)
+    return {
+      backgroundColor: '#FFEAEB',
+      textColor: '#690005',
+      borderColor: '#BA1A1A',
+      countColor: '#93000A'
+    };
   }
 }
 
@@ -265,6 +289,8 @@ function processData(
       color: color,
       backgroundColor: conditionalColors.backgroundColor,
       textColor: conditionalColors.textColor,
+      borderColor: conditionalColors.borderColor,
+      countColor: conditionalColors.countColor,
       columnId: categorySlot?.content?.[0]?.columnId,
       datasetId: categorySlot?.content?.[0]?.datasetId,
       value: categoryValue,
@@ -283,6 +309,8 @@ function processData(
       color,
       backgroundColor: conditionalColors.backgroundColor,
       textColor: conditionalColors.textColor,
+      borderColor: conditionalColors.borderColor,
+      countColor: conditionalColors.countColor,
       order: 0,
       percentage: 50
     });
@@ -397,41 +425,44 @@ function renderWidget(
   }
 
   // Use conditional background color
-  card.style.backgroundColor = item.backgroundColor;
+  // Horizontal/wide: white background, Vertical/tall: conditional background
+  card.style.backgroundColor = isHorizontalLayout ? item.backgroundColor : '#FFF';
 
   // Add selected state styling
+  // Vertical/tall layout: no border when unselected, 2px when selected (uses textColor)
+  // Horizontal/wide layout: 1px border when unselected, 2px when selected (uses borderColor)
   if (state.selectedCategory === item.value) {
     card.classList.add('alert-card-selected');
-    card.style.borderColor = item.textColor || item.color;
+    card.style.borderColor = isHorizontalLayout ? (item.textColor || item.color) : (item.borderColor || item.color);
     card.style.borderWidth = '2px';
   } else {
-    card.style.borderColor = item.textColor || item.color;
-    card.style.borderWidth = '1px';
+    card.style.borderColor = isHorizontalLayout ? (item.textColor || item.color) : (item.borderColor || item.color);
+    card.style.borderWidth = isHorizontalLayout ? '0' : '1px';
   }
 
   card.setAttribute('data-category', item.category);
 
-  // Color indicator (left border) - use text color for indicator
+  // Color indicator (left border) - use border color for indicator
   const indicator = document.createElement('div');
   indicator.className = 'alert-indicator';
-  indicator.style.backgroundColor = item.textColor || item.color;
+  indicator.style.backgroundColor = item.borderColor || item.color;
   card.appendChild(indicator);
 
   // Content container
   const content = document.createElement('div');
   content.className = 'alert-content';
 
-  // Count - use conditional text color
+  // Count - use countColor (horizontal) or textColor (vertical)
   const count = document.createElement('div');
   count.className = 'alert-count';
-  count.style.color = item.textColor || theme.textColor;
+  count.style.color = item.countColor || item.textColor || theme.textColor;
   count.textContent = item.count.toLocaleString();
   content.appendChild(count);
 
-  // Description
+  // Description - use rgba(24, 28, 32, 0.60) for horizontal/wide, textColor for vertical/tall
   const description = document.createElement('div');
   description.className = 'alert-description';
-  description.style.color = '#6B7280';
+  description.style.color = isHorizontalLayout ? (item.textColor || theme.textColor) : 'rgba(24, 28, 32, 0.60)';
   description.textContent = item.category;
   content.appendChild(description);
 
