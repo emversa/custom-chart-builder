@@ -391,15 +391,14 @@ function renderWidget(
   widget.className = 'alert-widget-single';
   container.appendChild(widget);
 
-  // Title (optional)
-  const title = document.createElement('div');
-  title.className = 'alert-title';
-  title.textContent = state.title || '\u00A0';
-  title.style.color = theme.textColor;
-  if (!state.title) {
-    title.style.opacity = '0';
+  // Title (optional) - only render if title exists
+  if (state.title) {
+    const title = document.createElement('div');
+    title.className = 'alert-title';
+    title.textContent = state.title;
+    title.style.color = theme.textColor;
+    widget.appendChild(title);
   }
-  widget.appendChild(title);
 
   // Single card container
   const cardContainer = document.createElement('div');

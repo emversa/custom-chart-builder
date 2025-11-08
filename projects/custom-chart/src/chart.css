@@ -5,7 +5,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 16px 32px 16px 16px;
   box-sizing: border-box;
   font-family: var(--font-family-Roboto, Roboto), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -24,9 +24,9 @@
 /* Single card container - main card wrapper */
 .alert-card-container {
   display: flex;
-  width: 348px;
+  width: 100%;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 4px;
   background: #FFF;
 }
@@ -199,7 +199,7 @@
 /* Very small sizes (under 180px) */
 @container (max-width: 180px) {
   .alert-widget-single {
-    padding: 8px;
+    padding: 8px 32px 8px 8px;
   }
 
   .alert-title {
@@ -242,7 +242,7 @@
 /* Small sizes (180px - 250px) */
 @container (min-width: 181px) and (max-width: 250px) {
   .alert-widget-single {
-    padding: 10px;
+    padding: 10px 32px 10px 10px;
   }
 
   .alert-title {
@@ -285,7 +285,7 @@
 /* Medium-small sizes (251px - 300px) */
 @container (min-width: 251px) and (max-width: 300px) {
   .alert-widget-single {
-    padding: 12px;
+    padding: 12px 32px 12px 12px;
   }
 
   .alert-title {
