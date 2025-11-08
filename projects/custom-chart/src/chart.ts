@@ -602,14 +602,12 @@ export const buildQuery = ({
   const measureColumn = measureSlot.content[0];
   const measureDef: any = {
     dataset_id: measureColumn.datasetId || (measureColumn as any).set,
-    column_id: measureColumn.columnId || (measureColumn as any).column,
-    // When grouping by dimensions, aggregation is required - default to sum
-    aggregation: (measureColumn as any).aggregation || 'sum'
+    column_id: measureColumn.columnId || (measureColumn as any).column
   };
 
-  // Only add format if it exists on the column
-  if ((measureColumn as any).format) {
-    measureDef.format = (measureColumn as any).format;
+  // Add aggregation if specified
+  if ((measureColumn as any).aggregationFunc && ['sum', 'average', 'min', 'max', 'count'].includes((measureColumn as any).aggregationFunc)) {
+    measureDef.aggregation = { type: (measureColumn as any).aggregationFunc };
   }
 
   measures.push(measureDef);
