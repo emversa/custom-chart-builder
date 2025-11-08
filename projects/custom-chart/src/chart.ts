@@ -652,6 +652,7 @@ function renderCategoriesList(
   list.className = 'categories-list';
   container.appendChild(list);
 
+  // Render actual categories
   state.categories.forEach(category => {
     const item = document.createElement('div');
     item.className = 'category-item';
@@ -686,6 +687,40 @@ function renderCategoriesList(
     item.appendChild(content);
     list.appendChild(item);
   });
+
+  // Add empty placeholder rows to always reserve space for 3 rows
+  const minRows = 3;
+  const placeholdersNeeded = Math.max(0, minRows - state.categories.length);
+
+  for (let i = 0; i < placeholdersNeeded; i++) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'category-item category-placeholder';
+    placeholder.style.visibility = 'hidden';
+    placeholder.style.pointerEvents = 'none';
+
+    // Color indicator
+    const indicator = document.createElement('div');
+    indicator.className = 'category-indicator';
+    indicator.style.backgroundColor = 'transparent';
+    placeholder.appendChild(indicator);
+
+    // Label and count container
+    const content = document.createElement('div');
+    content.className = 'category-content';
+
+    const label = document.createElement('div');
+    label.className = 'category-label';
+    label.innerHTML = '&nbsp;';
+    content.appendChild(label);
+
+    const count = document.createElement('div');
+    count.className = 'category-count';
+    count.innerHTML = '&nbsp;';
+    content.appendChild(count);
+
+    placeholder.appendChild(content);
+    list.appendChild(placeholder);
+  }
 }
 
 /**
