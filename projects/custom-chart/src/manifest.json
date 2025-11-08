@@ -3,8 +3,8 @@
     {
       "name": "category",
       "rotate": false,
-      "label": "Alert Category",
-      "description": "Add a categorical column (e.g., Issue Type, Priority Level, Alert Status). Only the first category value will be displayed as a single KPI card.",
+      "label": "Category",
+      "description": "Add a categorical column to group by (e.g., Issue Type, Alert Status). The measure will be aggregated per category, and only the first category will be displayed.",
       "type": "categorical",
       "order": 1,
       "isRequired": true,
@@ -13,25 +13,22 @@
       "position": "top-left"
     },
     {
-      "name": "identifier",
+      "name": "measure",
       "rotate": false,
-      "label": "Record ID",
-      "description": "Add a unique identifier column (ID, timestamp, etc.) to count unique alerts/records. The card will show the count of unique IDs for the selected category.",
-      "type": "categorical",
+      "label": "Measure",
+      "description": "Add a measure to aggregate per category (e.g., COUNT, SUM). The aggregated value will be displayed as the main KPI number.",
+      "type": "numeric",
       "order": 2,
-      "options": {
-        "isBinningDisabled": true
-      },
       "isRequired": true,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy", "datetime", "numeric"],
+      "acceptableColumnTypes": ["numeric"],
       "position": "middle"
     },
     {
-      "name": "measure",
+      "name": "order",
       "rotate": false,
       "label": "Order/Severity (Optional)",
-      "description": "Add a numeric column (e.g., _ORDER or _SEVERITY) to control color assignment. 0=Red (Critical), 1=Yellow (Warning), 2=Green (Info), etc. If omitted, uses first color.",
+      "description": "Add a numeric column (e.g., _ORDER or _SEVERITY) to control color assignment. 0=Healthy (Green), 1=Warning (Yellow), 2=Error (Red), etc. If omitted, uses first color.",
       "type": "numeric",
       "order": 3,
       "isRequired": false,

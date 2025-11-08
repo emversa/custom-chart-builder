@@ -27,7 +27,7 @@ interface ChartState {
   items: AlertItem[];
   total: number;
   categorySlot?: Slot;
-  recordIdSlot?: Slot;
+  measureSlot?: Slot;
   orderSlot?: Slot;
   title?: string;
   selectedCategory?: string | null;
@@ -191,8 +191,8 @@ function processData(
   language: string
 ): ChartState {
   const categorySlot = slots.find(s => s.name === 'category');
-  const recordIdSlot = slots.find(s => s.name === 'identifier');
-  const orderSlot = slots.find(s => s.name === 'measure');
+  const measureSlot = slots.find(s => s.name === 'measure');
+  const orderSlot = slots.find(s => s.name === 'order');
   const titleSlot = slots.find(s => s.name === 'legend');
 
   const hasOrderColumn = orderSlot?.content && orderSlot.content.length > 0;
@@ -203,127 +203,122 @@ function processData(
     ? formatTitle(extractColumnLabel(titleSlot.content[0], language, ''))
     : undefined;
 
-  // Track count of unique records per category
-  const categoryCounts: Record<string, Set<string>> = {};
-  const categoryOrders: Record<string, number> = {};
-
-  // Process data rows
-  if (categorySlot?.content && categorySlot.content.length > 0 &&
-      recordIdSlot?.content && recordIdSlot.content.length > 0 &&
-      data && data.length > 0) {
-
-    data.forEach((row) => {
-      const categoryObj = row[0];
-      const recordIdObj = row[1];
-      const orderObj = hasOrderColumn ? row[2] : undefined;
-
-      const categoryValue = String(categoryObj?.id ?? categoryObj ?? 'Unknown');
-      const recordId = String(recordIdObj?.id ?? recordIdObj);
-
-      let orderValue: number | undefined = undefined;
-      if (orderObj !== undefined && orderObj !== null) {
-        if (typeof orderObj === 'number') {
-          orderValue = orderObj;
-        } else if (typeof orderObj === 'object' && 'id' in orderObj) {
-          orderValue = Number(orderObj.id);
-        } else {
-          orderValue = Number(orderObj);
-        }
-      }
-
-      if (!categoryCounts[categoryValue]) {
-        categoryCounts[categoryValue] = new Set();
-      }
-      categoryCounts[categoryValue].add(recordId);
-
-      if (orderValue !== undefined && !isNaN(orderValue)) {
-        if (categoryOrders[categoryValue] === undefined || orderValue < categoryOrders[categoryValue]) {
-          categoryOrders[categoryValue] = orderValue;
-        }
-      }
-    });
-  }
-
-  // Get unique categories
-  const uniqueCategories = Object.keys(categoryCounts);
-
-  // Sort by order if provided, otherwise alphabetically
-  if (hasOrderColumn && Object.keys(categoryOrders).length > 0) {
-    uniqueCategories.sort((a, b) => {
-      const orderA = categoryOrders[a] ?? 999;
-      const orderB = categoryOrders[b] ?? 999;
-      if (orderA !== orderB) return orderA - orderB;
-      return a.localeCompare(b);
-    });
-  } else {
-    uniqueCategories.sort();
-  }
-
-  // Calculate total count across ALL categories
-  const totalCount = uniqueCategories.reduce((sum, cat) => sum + categoryCounts[cat].size, 0);
-
-  // Build items array - ONLY TAKE THE FIRST CATEGORY
+  // Build items array
   const items: AlertItem[] = [];
 
-  if (uniqueCategories.length > 0) {
-    const categoryValue = uniqueCategories[0]; // Only first category
-    const categoryCount = categoryCounts[categoryValue].size;
+  // Process data - expecting grouped/aggregated data
+  // Data structure: [category, order (optional), measure]
+  if (categorySlot?.content && categorySlot.content.length > 0 &&
+      measureSlot?.content && measureSlot.content.length > 0 &&
+      data && data.length > 0) {
 
-    // Calculate percentage of total
-    const percentage = totalCount > 0 ? (categoryCount / totalCount) * 100 : 0;
-
-    // Get conditional colors based on percentage
-    const conditionalColors = getConditionalColors(percentage);
-
-    let color: string;
-    if (hasOrderColumn && categoryOrders[categoryValue] !== undefined) {
-      const orderValue = categoryOrders[categoryValue];
-      color = theme.colors[orderValue % theme.colors.length];
-    } else {
-      color = theme.colors[0]; // Use first color
+    // Parse all rows and store them
+    interface ParsedRow {
+      categoryLabel: string;
+      orderValue: number;
+      measureValue: number;
     }
 
-    items.push({
-      category: categoryValue,
-      count: categoryCount,
-      color: color,
-      backgroundColor: conditionalColors.backgroundColor,
-      textColor: conditionalColors.textColor,
-      borderColor: conditionalColors.borderColor,
-      countColor: conditionalColors.countColor,
-      columnId: categorySlot?.content?.[0]?.columnId,
-      datasetId: categorySlot?.content?.[0]?.datasetId,
-      value: categoryValue,
-      order: categoryOrders[categoryValue] ?? 0,
-      percentage: percentage
+    const parsedRows: ParsedRow[] = [];
+
+    data.forEach((row) => {
+      // Data structure: dimensions first, then measures
+      // Without order: [categoryValue, measureValue]
+      // With order: [categoryValue, orderValue, measureValue]
+
+      const categoryObj = row[0];
+      const categoryLabel = String(categoryObj?.id ?? categoryObj ?? 'Unknown');
+
+      let orderValue = 0;
+      let measureIndex = 1; // Measure is at index 1 by default (no order)
+
+      if (hasOrderColumn) {
+        const orderObj = row[1];
+        if (orderObj !== undefined && orderObj !== null) {
+          if (typeof orderObj === 'number') {
+            orderValue = orderObj;
+          } else if (typeof orderObj === 'object' && 'id' in orderObj) {
+            orderValue = Number(orderObj.id);
+          } else {
+            orderValue = Number(orderObj);
+          }
+        }
+        measureIndex = 2; // With order, measure is at index 2
+      }
+
+      const measureObj = row[measureIndex];
+      let measureValue = 0;
+      if (measureObj !== undefined && measureObj !== null) {
+        if (typeof measureObj === 'number') {
+          measureValue = measureObj;
+        } else if (typeof measureObj === 'object' && 'id' in measureObj) {
+          measureValue = Number(measureObj.id);
+        } else {
+          measureValue = Number(measureObj);
+        }
+      }
+
+      parsedRows.push({ categoryLabel, orderValue, measureValue });
     });
+
+    // Sort by order value (ascending)
+    parsedRows.sort((a, b) => a.orderValue - b.orderValue);
+
+    // Take the first row after sorting
+    if (parsedRows.length > 0) {
+      const firstRow = parsedRows[0];
+
+      // Use order value to determine color (0=Healthy, 1=Warning, 2+=Error)
+      const conditionalColors = firstRow.orderValue === 0
+        ? { backgroundColor: '#E6F6DA', textColor: '#245100', borderColor: '#75BB43', countColor: '#326B00' }
+        : firstRow.orderValue === 1
+        ? { backgroundColor: '#FFF3DF', textColor: '#785A00', borderColor: '#F5B200', countColor: '#785A00' }
+        : { backgroundColor: '#FFEAEB', textColor: '#690005', borderColor: '#BA1A1A', countColor: '#93000A' };
+
+      const color = theme.colors[firstRow.orderValue % theme.colors.length];
+
+      items.push({
+        category: firstRow.categoryLabel,
+        count: firstRow.measureValue,
+        color: color,
+        backgroundColor: conditionalColors.backgroundColor,
+        textColor: conditionalColors.textColor,
+        borderColor: conditionalColors.borderColor,
+        countColor: conditionalColors.countColor,
+        columnId: categorySlot?.content?.[0]?.columnId,
+        datasetId: categorySlot?.content?.[0]?.datasetId,
+        value: firstRow.categoryLabel,
+        order: firstRow.orderValue,
+        percentage: 100 // Single value displayed
+      });
+    }
   }
 
   // Fallback: sample data (single item)
   if (items.length === 0) {
     const color = theme.colors[0];
-    const conditionalColors = getConditionalColors(50); // Default to 50% for sample
+    const conditionalColors = { backgroundColor: '#FFEAEB', textColor: '#690005', borderColor: '#BA1A1A', countColor: '#93000A' };
     items.push({
-      category: 'Critical Issues',
-      count: 3,
+      category: 'Sample KPI',
+      count: 42,
       color,
       backgroundColor: conditionalColors.backgroundColor,
       textColor: conditionalColors.textColor,
       borderColor: conditionalColors.borderColor,
       countColor: conditionalColors.countColor,
-      order: 0,
-      percentage: 50
+      order: 2,
+      percentage: 100
     });
   }
 
   // Calculate total
-  const total = totalCount;
+  const total = items[0]?.count ?? 0;
 
   return {
     items,
     total,
     categorySlot,
-    recordIdSlot,
+    measureSlot,
     orderSlot,
     title: customTitle,
     selectedCategory: null
@@ -452,14 +447,14 @@ function renderWidget(
   const content = document.createElement('div');
   content.className = 'alert-content';
 
-  // Count - use countColor (horizontal) or textColor (vertical)
+  // Count - vertical/tall uses textColor, horizontal/wide uses countColor
   const count = document.createElement('div');
   count.className = 'alert-count';
-  count.style.color = item.countColor || item.textColor || theme.textColor;
+  count.style.color = isHorizontalLayout ? (item.textColor || theme.textColor) : (item.countColor || theme.textColor);
   count.textContent = item.count.toLocaleString();
   content.appendChild(count);
 
-  // Description - use rgba(24, 28, 32, 0.60) for horizontal/wide, textColor for vertical/tall
+  // Description - vertical/tall uses textColor, horizontal/wide uses fixed gray
   const description = document.createElement('div');
   description.className = 'alert-description';
   description.style.color = isHorizontalLayout ? (item.textColor || theme.textColor) : 'rgba(24, 28, 32, 0.60)';
@@ -569,11 +564,12 @@ export const buildQuery = ({
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
   const categorySlot = slots.find(s => s.name === 'category');
-  const recordIdSlot = slots.find(s => s.name === 'identifier');
-  const orderSlot = slots.find(s => s.name === 'measure');
+  const measureSlot = slots.find(s => s.name === 'measure');
+  const orderSlot = slots.find(s => s.name === 'order');
 
+  // Category and measure are required
   if (!categorySlot?.content || categorySlot.content.length === 0 ||
-      !recordIdSlot?.content || recordIdSlot.content.length === 0) {
+      !measureSlot?.content || measureSlot.content.length === 0) {
     return {
       dimensions: [],
       measures: [],
@@ -582,8 +578,9 @@ export const buildQuery = ({
   }
 
   const dimensions: any[] = [];
+  const measures: any[] = [];
 
-  // Add category column
+  // Add category dimension (for grouping)
   const categoryColumn = categorySlot.content[0];
   dimensions.push({
     dataset_id: categoryColumn.datasetId || (categoryColumn as any).set,
@@ -591,15 +588,7 @@ export const buildQuery = ({
     level: categoryColumn.level || 1
   });
 
-  // Add record ID column
-  const recordIdColumn = recordIdSlot.content[0];
-  dimensions.push({
-    dataset_id: recordIdColumn.datasetId || (recordIdColumn as any).set,
-    column_id: recordIdColumn.columnId || (recordIdColumn as any).column,
-    level: recordIdColumn.level || 1
-  });
-
-  // Add order column if provided
+  // Add order dimension if provided (for sorting which category appears first)
   if (orderSlot?.content && orderSlot.content.length > 0) {
     const orderColumn = orderSlot.content[0];
     dimensions.push({
@@ -609,9 +598,25 @@ export const buildQuery = ({
     });
   }
 
+  // Add measure (will be aggregated per category)
+  const measureColumn = measureSlot.content[0];
+  const measureDef: any = {
+    dataset_id: measureColumn.datasetId || (measureColumn as any).set,
+    column_id: measureColumn.columnId || (measureColumn as any).column,
+    // When grouping by dimensions, aggregation is required - default to sum
+    aggregation: (measureColumn as any).aggregation || 'sum'
+  };
+
+  // Only add format if it exists on the column
+  if ((measureColumn as any).format) {
+    measureDef.format = (measureColumn as any).format;
+  }
+
+  measures.push(measureDef);
+
   return {
     dimensions,
-    measures: [],
+    measures,
     order: []
   };
 };
