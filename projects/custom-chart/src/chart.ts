@@ -405,7 +405,7 @@ function renderWidget(
     card.style.borderColor = item.textColor || item.color;
     card.style.borderWidth = '2px';
   } else {
-    card.style.borderColor = item.backgroundColor;
+    card.style.borderColor = item.textColor || item.color;
     card.style.borderWidth = '1px';
   }
 
