@@ -66,6 +66,7 @@
   gap: 8px;
   cursor: pointer;
   transition: all 0.25s ease;
+  padding: 4px 8px 4px 0;
 }
 
 .category-item:hover {
@@ -97,7 +98,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
 }
 
 /* Category label - Figma: caption-body (Healthy Stores, Warning Stores, Error Stores) */
