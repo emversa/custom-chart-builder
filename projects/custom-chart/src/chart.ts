@@ -582,10 +582,10 @@ function renderDonutChart(
   theme: ThemeContext,
   containerWidth: number
 ): void {
-  // Fixed size from Figma: 120px x 120px with 15px stroke
+  // Fixed size from Figma: 120px x 120px with 14px stroke
   // CSS scales it to 80px in vertical layout
   const size = 120;
-  const strokeWidth = 15;
+  const strokeWidth = 14;
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
