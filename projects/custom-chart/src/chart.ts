@@ -532,8 +532,8 @@ function renderDonutChart(
   // Fixed size from Figma: 120px x 120px
   const size = 120;
 
-  // Stroke width: 15px (thinner donut ring)
-  const strokeWidth = 15;
+  // Stroke width: 14px (thinner donut ring)
+  const strokeWidth = 14;
 
   const radius = size / 2;
   const innerRadius = radius - strokeWidth;
@@ -631,8 +631,11 @@ function renderDonutChart(
   // Center text - Figma: display-3 (40px, centered)
   const centerText = String(state.centerMetric);
 
+  // Add class for longer text (4+ characters like "100%") to prevent overflow
+  const centerTextClass = centerText.length >= 4 ? 'center-score center-score-long' : 'center-score';
+
   g.append('text')
-    .attr('class', 'center-score')
+    .attr('class', centerTextClass)
     .attr('text-anchor', 'middle')
     .attr('dominant-baseline', 'central')
     .attr('x', 0)

@@ -85,6 +85,7 @@
   gap: 8px;
   cursor: pointer;
   transition: all 0.25s ease;
+  border-radius: 4px;
 }
 
 .category-item:hover {
@@ -141,6 +142,8 @@
   line-height: var(--heading-3-line-height, 24px);
   letter-spacing: var(--heading-3-letter-spacing, 0);
   font-variant-numeric: tabular-nums;
+  min-width: 85px;
+  text-align: left;
 }
 
 /* Donut chart - Figma: 120px x 120px */
@@ -166,6 +169,12 @@
   line-height: var(--display-3-line-height, 46px);
   letter-spacing: var(--display-3-letter-spacing, 0);
   font-variant-numeric: tabular-nums;
+}
+
+/* Smaller center score for longer text like "100%" */
+.center-score.center-score-long {
+  font-size: 36px;
+  line-height: 42px;
 }
 
 .segment {
