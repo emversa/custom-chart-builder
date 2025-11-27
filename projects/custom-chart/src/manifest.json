@@ -2,7 +2,6 @@
   "slots": [
     {
       "name": "name",
-      "rotate": false,
       "label": "Project Name",
       "description": "Add project/task name column. This will be displayed in the left panel hierarchy.",
       "type": "categorical",
@@ -13,7 +12,6 @@
     },
     {
       "name": "row",
-      "rotate": false,
       "label": "Project ID",
       "description": "Add unique project ID column. Used to identify projects and build hierarchy relationships.",
       "type": "categorical",
@@ -24,7 +22,6 @@
     },
     {
       "name": "category",
-      "rotate": false,
       "label": "Category Type",
       "description": "Add category column (organization, epic, story, deal). Used to determine hierarchy level and visual styling.",
       "type": "categorical",
@@ -35,7 +32,6 @@
     },
     {
       "name": "levels",
-      "rotate": false,
       "label": "Parent ID",
       "description": "Add parent ID column to define hierarchy relationships. References another project's ID to create parent-child structure. Leave null for top-level items.",
       "type": "categorical",
@@ -46,7 +42,6 @@
     },
     {
       "name": "slidermetric",
-      "rotate": false,
       "label": "Client",
       "description": "Add client name column. Displayed on organization-level items in the left panel.",
       "type": "categorical",
@@ -57,7 +52,6 @@
     },
     {
       "name": "time",
-      "rotate": false,
       "label": "Start Date",
       "description": "Add start date column for timeline positioning. Must be datetime type.",
       "type": "categorical",
@@ -72,7 +66,6 @@
     },
     {
       "name": "evolution",
-      "rotate": false,
       "label": "End Date",
       "description": "Add end date column for timeline bar length. Must be datetime type.",
       "type": "categorical",
@@ -87,7 +80,6 @@
     },
     {
       "name": "identifier",
-      "rotate": false,
       "label": "Status",
       "description": "Add status column (active, at risk, completed, in planning, pipeline). Displayed as colored circle on timeline bars.",
       "type": "categorical",
@@ -98,7 +90,6 @@
     },
     {
       "name": "dimension",
-      "rotate": false,
       "label": "Assignee",
       "description": "Add assignee name column. Displayed as initials in glass pill badge on timeline bars.",
       "type": "categorical",
@@ -109,7 +100,6 @@
     },
     {
       "name": "color",
-      "rotate": false,
       "label": "Color Code",
       "description": "Add color code column (PURPLE, ORANGE, GREEN, GRAY). Determines timeline bar color.",
       "type": "categorical",
@@ -120,7 +110,6 @@
     },
     {
       "name": "measure",
-      "rotate": false,
       "label": "Hours Billed",
       "description": "Add hours billed column (numeric). Used to calculate progress percentage and display on bars.",
       "type": "numeric",
@@ -135,7 +124,6 @@
     },
     {
       "name": "columns",
-      "rotate": false,
       "label": "Hours Estimated",
       "description": "Add hours estimated column (numeric). Displayed in hours badge on timeline bars.",
       "type": "numeric",
@@ -150,7 +138,6 @@
     },
     {
       "name": "size",
-      "rotate": false,
       "label": "Hours Budgeted",
       "description": "Add hours budgeted column (numeric). Used to calculate progress percentage and two-shade bar visualization.",
       "type": "numeric",
