@@ -360,7 +360,7 @@
 /* Gantt tooltip */
 .gantt-tooltip {
   position: absolute;
-  background: rgba(45, 45, 55, 0.92);
+  background: rgba(70, 70, 85, 0.88);
   color: white;
   padding: 12px;
   border-radius: 8px;
@@ -370,7 +370,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   line-height: 1.6;
   min-width: 200px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
 }
 
 .gantt-tooltip strong {
