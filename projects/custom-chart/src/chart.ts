@@ -46,6 +46,7 @@ interface ThemeContext {
   textColor: string;
   fontFamily: string;
   mainColor: string;
+  isDark: boolean;
 }
 
 interface ChartParams {
@@ -176,7 +177,8 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
   const backgroundColor = theme?.itemsBackground || '#F8FAFC';
   const backgroundRgb = toRgb(backgroundColor);
   const luminance = getRelativeLuminance(backgroundRgb);
-  const textColor = luminance < 0.45 ? '#F8FAFC' : '#1E293B';
+  const isDark = luminance < 0.45;
+  const textColor = isDark ? '#F8FAFC' : '#1E293B';
   const mainColor = theme?.mainColor || '#6366F1';
   const fontFamily = theme?.font?.fontFamily ||
     '-apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
@@ -185,8 +187,13 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
     backgroundColor,
     textColor,
     fontFamily,
-    mainColor
+    mainColor,
+    isDark
   };
+}
+
+function getThemedColor(lightColor: string, darkColor: string, isDark: boolean): string {
+  return isDark ? darkColor : lightColor;
 }
 
 // ============================================================================
@@ -577,7 +584,7 @@ function renderGanttChart(
 
   // Create main container
   const mainContainer = document.createElement('div');
-  mainContainer.className = 'gantt-container';
+  mainContainer.className = `gantt-container${theme.isDark ? ' gantt-dark' : ''}`;
   container.appendChild(mainContainer);
 
   // Create header
@@ -606,7 +613,7 @@ function renderGanttChart(
   const leftPanelHeader = document.createElement('div');
   leftPanelHeader.className = 'gantt-left-header';
   leftPanelHeader.style.height = `${TIMELINE_HEADER_HEIGHT}px`;
-  leftPanelHeader.style.borderBottom = '2px solid #E2E8F0';
+  leftPanelHeader.style.borderBottom = `2px solid ${getThemedColor('#E2E8F0', '#334155', theme.isDark)}`;
   leftPanelHeader.style.flexShrink = '0';
   leftPanel.appendChild(leftPanelHeader);
 
@@ -714,8 +721,10 @@ function renderTimelineHeader(
         .attr('y', 0)
         .attr('width', monthWidth)
         .attr('height', 30)
-        .attr('fill', index % 2 === 0 ? '#F8FAFC' : '#F1F5F9')
-        .attr('stroke', '#E2E8F0')
+        .attr('fill', index % 2 === 0
+          ? getThemedColor('#F8FAFC', '#1E293B', theme.isDark)
+          : getThemedColor('#F1F5F9', '#293548', theme.isDark))
+        .attr('stroke', getThemedColor('#E2E8F0', '#334155', theme.isDark))
         .attr('stroke-width', 1);
 
       svg.append('text')
@@ -742,7 +751,7 @@ function renderTimelineHeader(
         .attr('y1', 30)
         .attr('x2', x)
         .attr('y2', TIMELINE_HEADER_HEIGHT)
-        .attr('stroke', '#E2E8F0')
+        .attr('stroke', getThemedColor('#E2E8F0', '#334155', theme.isDark))
         .attr('stroke-width', 1);
 
       svg.append('text')
@@ -778,9 +787,9 @@ function renderProjectRows(
     // Style row based on category level for visual hierarchy
     const isTopLevel = project.category === 'organization';
     if (isTopLevel) {
-      row.style.backgroundColor = '#F8FAFC';
-      row.style.borderTop = '1px solid #CBD5E1';
-      row.style.borderBottom = '1px solid #E2E8F0';
+      row.style.backgroundColor = getThemedColor('#F8FAFC', '#1E293B', theme.isDark);
+      row.style.borderTop = `1px solid ${getThemedColor('#CBD5E1', '#475569', theme.isDark)}`;
+      row.style.borderBottom = `1px solid ${getThemedColor('#E2E8F0', '#334155', theme.isDark)}`;
     }
 
     // Create content wrapper with hierarchy indentation
@@ -853,7 +862,7 @@ function renderProjectRows(
         .attr('y1', 0)
         .attr('x2', x)
         .attr('y2', projectsToRender.length * ROW_HEIGHT)
-        .attr('stroke', '#E2E8F0')
+        .attr('stroke', getThemedColor('#E2E8F0', '#334155', theme.isDark))
         .attr('stroke-width', 1)
         .attr('opacity', 0.3);
     }
