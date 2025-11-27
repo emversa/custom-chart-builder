@@ -1,70 +1,175 @@
 {
   "slots": [
     {
-      "name": "category",
+      "name": "name",
       "rotate": false,
-      "label": "Status Category",
-      "description": "Add a categorical status column (e.g., Healthy, Warning, Error). Create a formula in Luzmo: IF([Score] >= 81, 'Healthy', IF([Score] >= 51, 'Warning', 'Error')). Each unique value will appear in the legend with its count.",
+      "label": "Project Name",
+      "description": "Add project/task name column (hierarchy type). This will be displayed in the left panel hierarchy.",
       "type": "categorical",
       "order": 1,
       "isRequired": true,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["hierarchy"],
+      "position": "left"
+    },
+    {
+      "name": "row",
+      "rotate": false,
+      "label": "Project ID",
+      "description": "Add unique project ID column. Used to identify projects and build hierarchy relationships.",
+      "type": "categorical",
+      "order": 2,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "left"
+    },
+    {
+      "name": "category",
+      "rotate": false,
+      "label": "Category Type",
+      "description": "Add category column (organization, epic, story, deal). Used to determine hierarchy level and visual styling.",
+      "type": "categorical",
+      "order": 3,
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "left"
+    },
+    {
+      "name": "levels",
+      "rotate": false,
+      "label": "Parent ID",
+      "description": "Add parent ID column to define hierarchy relationships. References another project's ID to create parent-child structure. Leave null for top-level items.",
+      "type": "categorical",
+      "order": 4,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "left"
+    },
+    {
+      "name": "slidermetric",
+      "rotate": false,
+      "label": "Client",
+      "description": "Add client name column. Displayed on organization-level items in the left panel.",
+      "type": "categorical",
+      "order": 5,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "top"
+    },
+    {
+      "name": "time",
+      "rotate": false,
+      "label": "Start Date",
+      "description": "Add start date column for timeline positioning. Must be datetime type.",
+      "type": "categorical",
+      "order": 6,
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["datetime"],
+      "options": {
+        "areDatetimeOptionsEnabled": true
+      },
+      "position": "bottom"
+    },
+    {
+      "name": "evolution",
+      "rotate": false,
+      "label": "End Date",
+      "description": "Add end date column for timeline bar length. Must be datetime type.",
+      "type": "categorical",
+      "order": 7,
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["datetime"],
+      "options": {
+        "areDatetimeOptionsEnabled": true
+      },
+      "position": "bottom"
+    },
+    {
+      "name": "identifier",
+      "rotate": false,
+      "label": "Status",
+      "description": "Add status column (active, at risk, completed, in planning, pipeline). Displayed as colored circle on timeline bars.",
+      "type": "categorical",
+      "order": 8,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
       "position": "top-left"
     },
     {
-      "name": "size",
+      "name": "dimension",
       "rotate": false,
-      "label": "Record Count",
-      "description": "Add any column with COUNT aggregation to count records per category. This shows in the legend (e.g., '500'). Typically use an ID column or any column with COUNT aggregation.",
-      "type": "numeric",
-      "order": 2,
-      "options": {
-        "isAggregationDisabled": false
-      },
-      "isRequired": true,
+      "label": "Assignee",
+      "description": "Add assignee name column. Displayed as initials in glass pill badge on timeline bars.",
+      "type": "categorical",
+      "order": 9,
+      "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["numeric"],
-      "position": "middle"
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "top"
+    },
+    {
+      "name": "color",
+      "rotate": false,
+      "label": "Color Code",
+      "description": "Add color code column (PURPLE, ORANGE, GREEN, GRAY). Determines timeline bar color.",
+      "type": "categorical",
+      "order": 10,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["hierarchy"],
+      "position": "top-right"
     },
     {
       "name": "measure",
       "rotate": false,
-      "label": "Metric Value (for Center KPI)",
-      "description": "Add the numeric metric column with AVERAGE aggregation. This displays in the center of the donut chart (e.g., '72'). Must use AVERAGE aggregation for weighted average calculation.",
+      "label": "Hours Billed",
+      "description": "Add hours billed column (numeric). Used to calculate progress percentage and display on bars.",
       "type": "numeric",
-      "order": 3,
-      "options": {
-        "isAggregationDisabled": false
-      },
-      "isRequired": true,
+      "order": 11,
+      "isRequired": false,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["numeric"],
+      "options": {
+        "isAggregationDisabled": true
+      },
       "position": "middle"
     },
     {
-      "name": "order",
+      "name": "columns",
       "rotate": false,
-      "label": "Order (Optional)",
-      "description": "Add a numeric column (e.g., _ORDER) to control color assignment and display order. 0=Healthy, 1=Warning, 2=Error, etc. If omitted, uses hardcoded order: Healthy, Warning, Error.",
+      "label": "Hours Estimated",
+      "description": "Add hours estimated column (numeric). Displayed in hours badge on timeline bars.",
       "type": "numeric",
-      "order": 4,
+      "order": 12,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["numeric"],
-      "position": "bottom-left"
+      "options": {
+        "isAggregationDisabled": true
+      },
+      "position": "middle"
     },
     {
-      "name": "legend",
+      "name": "size",
       "rotate": false,
-      "label": "Title (Optional)",
-      "description": "Add any column to use its name as the chart title. The column NAME will be displayed (not its values). If omitted, shows default title.",
+      "label": "Hours Budgeted",
+      "description": "Add hours budgeted column (numeric). Used to calculate progress percentage and two-shade bar visualization.",
       "type": "numeric",
-      "order": 5,
+      "order": 13,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["numeric", "hierarchy"],
-      "position": "bottom-right"
+      "acceptableColumnTypes": ["numeric"],
+      "options": {
+        "isAggregationDisabled": true
+      },
+      "position": "middle"
     }
   ]
 }

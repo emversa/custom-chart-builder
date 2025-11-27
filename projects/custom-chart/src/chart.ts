@@ -16,28 +16,32 @@ import * as d3 from 'd3';
 // ============================================================================
 // DATA STRUCTURES
 // ============================================================================
-interface StatusCategory {
+
+interface Project {
+  id: string;
+  category: 'organization' | 'epic' | 'story' | 'deal' | string;
   name: string;
-  count: number;
-  color: string;
-  columnId?: string;
-  datasetId?: string;
-  value?: any; // Original value for filtering
+  startDate: Date;
+  endDate: Date;
+  assignee: string | null;
+  status: 'active' | 'at risk' | 'completed' | 'in planning' | 'pipeline' | string;
+  hoursBilled: number | null;
+  hoursEstimated: number | null;
+  hoursBudgeted: number | null;
+  colorCode: 'PURPLE' | 'ORANGE' | 'GREEN' | 'GRAY' | string;
+  parentId?: string | null;
+  client?: string;
+  rowIndex: number;
+  depth: number;
+  children?: Project[];
+  isExpanded?: boolean;
 }
 
 interface ChartState {
-  categories: StatusCategory[];
-  total: number; // Total count (filtered if category selected)
-  overallTotal: number; // Overall total across all categories (for percentage calculations)
-  aggregatedScore: number; // The aggregated score to display in center
-  categorySlot?: Slot;
-  sizeSlot?: Slot; // For COUNT of records per category
-  measureSlot?: Slot; // For AVERAGE health score
-  orderSlot?: Slot;
-  legendSlot?: Slot;
-  selectedCategory?: string | null; // Track selected filter
-  title?: string;
-  allCategoryData: Record<string, { count: number; avgScore: number }>; // Store all data for recalculation
+  projects: Project[];
+  flatProjects: Project[]; // Flattened list for rendering
+  minDate: Date;
+  maxDate: Date;
 }
 
 interface ThemeContext {
@@ -45,7 +49,6 @@ interface ThemeContext {
   textColor: string;
   fontFamily: string;
   mainColor: string;
-  colors: string[];
 }
 
 interface ChartParams {
@@ -59,7 +62,106 @@ interface ChartParams {
 }
 
 // ============================================================================
-// THEME AND COLOR HELPERS
+// CONSTANTS
+// ============================================================================
+
+const ROW_HEIGHT = 40;
+const LEFT_PANEL_WIDTH = 350;
+const TIMELINE_HEADER_HEIGHT = 60;
+const BAR_HEIGHT = 32; // Slightly smaller than row height for spacing
+const BAR_VERTICAL_PADDING = 4; // Padding above and below each bar
+const PADDING = 16;
+
+const COLOR_MAP: Record<string, string> = {
+  'PURPLE': '#A78BFA',
+  'ORANGE': '#FB923C',
+  'GREEN': '#4ADE80',
+  'GRAY': '#94A3B8'
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  'active': '#4ADE80',
+  'at risk': '#FB923C',
+  'completed': '#60A5FA',
+  'in planning': '#94A3B8',
+  'pipeline': '#94A3B8'
+};
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+function extractValue(obj: any, type: 'string' | 'number' | 'date'): any {
+  if (obj === null || obj === undefined) {
+    if (type === 'number') return null;
+    if (type === 'date') return null;
+    return null;
+  }
+
+  if (type === 'date') {
+    if (obj instanceof Date) return obj;
+    if (typeof obj === 'string' || typeof obj === 'number') {
+      const date = new Date(obj);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof obj === 'object' && 'id' in obj) {
+      const date = new Date(obj.id);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  }
+
+  if (type === 'number') {
+    if (typeof obj === 'number') return obj;
+    if (typeof obj === 'object' && 'id' in obj) return Number(obj.id);
+    return Number(obj);
+  }
+
+  // string
+  if (typeof obj === 'string') return obj;
+  if (typeof obj === 'object' && 'name' in obj) {
+    const nameObj = obj.name;
+    if (typeof nameObj === 'object' && nameObj !== null) {
+      return String(nameObj.en ?? Object.values(nameObj)[0] ?? obj.id ?? 'Unknown');
+    }
+    return String(nameObj ?? obj.id ?? 'Unknown');
+  }
+  if (typeof obj === 'object' && 'id' in obj) return String(obj.id);
+  return String(obj);
+}
+
+function getInitials(fullName: string | null): string | null {
+  if (!fullName || fullName.trim() === '') return null;
+
+  const parts = fullName.trim().split(' ');
+  if (parts.length === 1) {
+    return parts[0].substring(0, 2).toUpperCase();
+  }
+
+  return parts
+    .map(part => part.charAt(0).toUpperCase())
+    .join('')
+    .substring(0, 2);
+}
+
+function formatHoursDisplay(
+  billed: number | null,
+  estimated: number | null,
+  budgeted: number | null
+): string {
+  const b = billed !== null ? billed.toFixed(1) : '—';
+  const e = estimated !== null ? estimated.toFixed(1) : '—';
+  const bu = budgeted !== null ? budgeted.toFixed(1) : '—';
+  return `${b}/${e}/${bu}`;
+}
+
+function calculateProgress(billed: number | null, budgeted: number | null): number {
+  if (billed === null || budgeted === null || budgeted === 0) return 0;
+  return Math.min(Math.max(billed / budgeted, 0), 1);
+}
+
+// ============================================================================
+// THEME HELPERS
 // ============================================================================
 
 function toRgb(color?: string, fallback = '#ffffff'): d3.RGBColor {
@@ -76,20 +178,11 @@ function getRelativeLuminance(color: d3.RGBColor): number {
 }
 
 function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
-  const backgroundColor = theme?.itemsBackground || '#ffffff';
+  const backgroundColor = theme?.itemsBackground || '#F8FAFC';
   const backgroundRgb = toRgb(backgroundColor);
   const luminance = getRelativeLuminance(backgroundRgb);
-  const textColor = luminance < 0.45 ? '#f8fafc' : '#1f2937';
-
-  const paletteFromTheme = (theme?.colors ?? []).filter(Boolean) as string[];
-  const mainColor = theme?.mainColor || paletteFromTheme[0] || '#6366f1';
-
-  // Default status colors: green, yellow, red
-  const defaultColors = ['#10b981', '#f59e0b', '#ef4444'];
-  const colors = paletteFromTheme.length >= 3
-    ? paletteFromTheme.slice(0, 3)
-    : [...paletteFromTheme, ...defaultColors].slice(0, 3);
-
+  const textColor = luminance < 0.45 ? '#F8FAFC' : '#1E293B';
+  const mainColor = theme?.mainColor || '#6366F1';
   const fontFamily = theme?.font?.fontFamily ||
     '-apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
@@ -97,296 +190,371 @@ function resolveTheme(theme?: ItemThemeConfig): ThemeContext {
     backgroundColor,
     textColor,
     fontFamily,
-    mainColor,
-    colors
+    mainColor
   };
-}
-
-// ============================================================================
-// EVENT COMMUNICATION
-// ============================================================================
-
-function sendFilterEvent(filters: ItemFilter[]): void {
-  window.parent.postMessage({ type: 'setFilter', filters }, '*');
-}
-
-function sendCustomEvent(data: any): void {
-  window.parent.postMessage({ type: 'customEvent', data }, '*');
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-/**
- * Extract column label from slot content
- */
-function extractColumnLabel(column: any, language: string, fallback = 'Category'): string {
-  if (typeof column.label === 'object' && column.label !== null) {
-    return column.label.en || column.label[language] || Object.values(column.label)[0] || fallback;
-  }
-  if (column.label) {
-    return String(column.label);
-  }
-  if (column.columnId) {
-    return String(column.columnId);
-  }
-  return fallback;
-}
-
-/**
- * Format title: remove underscores and capitalize first letter of each word
- */
-function formatTitle(title: string): string {
-  return title
-    .replace(/_/g, ' ')
-    .split(' ')
-    .map(word => {
-      if (word.length === 0) return word;
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
-    .join(' ');
-}
-
-/**
- * Extract value from data object (handles both direct values and nested objects)
- */
-function extractValue(obj: any, type: 'string' | 'number'): any {
-  if (obj === null || obj === undefined) {
-    return type === 'number' ? 0 : 'Unknown';
-  }
-
-  if (typeof obj === type) {
-    return obj;
-  }
-
-  if (typeof obj === 'object' && 'id' in obj) {
-    return type === 'number' ? Number(obj.id) : String(obj.id);
-  }
-
-  return type === 'number' ? Number(obj) : String(obj);
-}
-
-/**
- * Extract category display name from category object
- */
-function extractCategoryName(categoryObj: any, language: string): string {
-  if (!categoryObj) return 'Unknown';
-
-  if (typeof categoryObj === 'object' && 'name' in categoryObj) {
-    const nameObj = categoryObj.name;
-    if (typeof nameObj === 'object' && nameObj !== null) {
-      return String(nameObj[language] ?? nameObj.en ?? Object.values(nameObj)[0] ?? categoryObj.id ?? 'Unknown');
-    }
-    return String(nameObj ?? categoryObj.id ?? 'Unknown');
-  }
-
-  return String(categoryObj?.id ?? categoryObj ?? 'Unknown');
 }
 
 // ============================================================================
 // DATA PROCESSING
 // ============================================================================
 
-/**
- * Process data from slots into StatusCategory array
- * Uses server-side aggregated health category data
- *
- * LOGIC:
- * 1. Input: Aggregated rows with [Category, Order?, Count, Avg Score]
- * 2. Read pre-aggregated values directly from server
- * 3. Legend shows: COUNT of records per category (from count measure)
- * 4. Center shows: AVERAGE score (weighted average from avgScore measure)
- * 5. Display order: uses order column if provided, otherwise hardcoded: Healthy, Warning, Error
- * 6. Clicking category filters data and recalculates center score
- *
- * Data structure:
- *  - With order: [Category, Order, Count, AvgScore]
- *  - Without order: [Category, Count, AvgScore]
- *
- * Example: Server returns 3 rows (already aggregated)
- *  - ["Healthy", 0, 500, 87.5] → Healthy count = 500, avg = 87.5
- *  - ["Warning", 1, 300, 65.2] → Warning count = 300, avg = 65.2
- *  - ["Error", 2, 200, 35.8] → Error count = 200, avg = 35.8
- *  - Center displays: Weighted average = (500*87.5 + 300*65.2 + 200*35.8) / 1000 = 72
- */
 function processData(
   data: ItemData['data'],
   slots: Slot[],
-  colors: string[],
-  language: string,
-  selectedCategory?: string | null
+  language: string
 ): ChartState {
+  const nameSlot = slots.find(s => s.name === 'name');
   const categorySlot = slots.find(s => s.name === 'category');
-  const sizeSlot = slots.find(s => s.name === 'size');
-  const measureSlot = slots.find(s => s.name === 'measure');
-  const orderSlot = slots.find(s => s.name === 'order');
-  const legendSlot = slots.find(s => s.name === 'legend');
+  const startDateSlot = slots.find(s => s.name === 'time');
+  const endDateSlot = slots.find(s => s.name === 'evolution');
+  const statusSlot = slots.find(s => s.name === 'identifier');
+  const assigneeSlot = slots.find(s => s.name === 'dimension');
+  const hoursBilledSlot = slots.find(s => s.name === 'measure');
+  const hoursEstimatedSlot = slots.find(s => s.name === 'columns');
+  const hoursBudgetedSlot = slots.find(s => s.name === 'size');
+  const colorCodeSlot = slots.find(s => s.name === 'color');
+  const parentIdSlot = slots.find(s => s.name === 'levels');
+  const projectIdSlot = slots.find(s => s.name === 'row');
+  const clientSlot = slots.find(s => s.name === 'slidermetric');
 
-  // Track aggregated data per category
-  const categoryData: Record<string, { count: number; avgScore: number }> = {};
-  const categoryOrders: Record<string, number> = {};
+  const projects: Project[] = [];
+  let minDate = new Date();
+  let maxDate = new Date();
 
-  const hasOrderColumn = orderSlot?.content && orderSlot.content.length > 0;
-  const hasTitleColumn = legendSlot?.content && legendSlot.content.length > 0;
+  if (data && data.length > 0) {
+    // Build column index mapping based on which slots have content
+    const columnMapping: { [key: string]: number } = {};
+    let currentIndex = 0;
 
-  // Process data - data is already aggregated by server
-  if (categorySlot?.content && categorySlot.content.length > 0 &&
-      sizeSlot?.content && sizeSlot.content.length > 0 &&
-      measureSlot?.content && measureSlot.content.length > 0 &&
-      data && data.length > 0) {
+    if (nameSlot?.content?.[0]) columnMapping['name'] = currentIndex++;
+    if (categorySlot?.content?.[0]) columnMapping['category'] = currentIndex++;
+    if (startDateSlot?.content?.[0]) columnMapping['startDate'] = currentIndex++;
+    if (endDateSlot?.content?.[0]) columnMapping['endDate'] = currentIndex++;
+    if (statusSlot?.content?.[0]) columnMapping['status'] = currentIndex++;
+    if (assigneeSlot?.content?.[0]) columnMapping['assignee'] = currentIndex++;
+    if (colorCodeSlot?.content?.[0]) columnMapping['colorCode'] = currentIndex++;
+    if (parentIdSlot?.content?.[0]) columnMapping['parentId'] = currentIndex++;
+    if (projectIdSlot?.content?.[0]) columnMapping['projectId'] = currentIndex++;
+    if (clientSlot?.content?.[0]) columnMapping['client'] = currentIndex++;
 
-    // Data structure:
-    //   With order: [Category, Order, Count, AvgScore]
-    //   Without order: [Category, Count, AvgScore]
-    data.forEach((row) => {
-      const categoryObj = row[0];
-      const orderValueObj = hasOrderColumn ? row[1] : undefined;
-      const sizeObj = hasOrderColumn ? row[2] : row[1];
-      const avgScoreObj = hasOrderColumn ? row[3] : row[2];
+    // Measures come after dimensions
+    if (hoursBilledSlot?.content?.[0]) columnMapping['hoursBilled'] = currentIndex++;
+    if (hoursEstimatedSlot?.content?.[0]) columnMapping['hoursEstimated'] = currentIndex++;
+    if (hoursBudgetedSlot?.content?.[0]) columnMapping['hoursBudgeted'] = currentIndex++;
 
-      // Extract values using helper functions
-      const categoryValue = extractCategoryName(categoryObj, language);
-      const countValue = extractValue(sizeObj, 'number');
-      const avgScoreValue = extractValue(avgScoreObj, 'number');
+    data.forEach((row, index) => {
+      const name = 'name' in columnMapping ? extractValue(row[columnMapping['name']], 'string') : `Project ${index + 1}`;
+      const category = 'category' in columnMapping ? extractValue(row[columnMapping['category']], 'string') : 'epic';
+      const startDate = 'startDate' in columnMapping ? extractValue(row[columnMapping['startDate']], 'date') : new Date();
+      const endDate = 'endDate' in columnMapping ? extractValue(row[columnMapping['endDate']], 'date') : new Date();
+      const status = 'status' in columnMapping ? extractValue(row[columnMapping['status']], 'string') : 'active';
+      const assignee = 'assignee' in columnMapping ? extractValue(row[columnMapping['assignee']], 'string') : null;
+      const hoursBilled = 'hoursBilled' in columnMapping ? extractValue(row[columnMapping['hoursBilled']], 'number') : null;
+      const hoursEstimated = 'hoursEstimated' in columnMapping ? extractValue(row[columnMapping['hoursEstimated']], 'number') : null;
+      const hoursBudgeted = 'hoursBudgeted' in columnMapping ? extractValue(row[columnMapping['hoursBudgeted']], 'number') : null;
+      const colorCode = 'colorCode' in columnMapping ? extractValue(row[columnMapping['colorCode']], 'string') : 'PURPLE';
+      const parentId = 'parentId' in columnMapping ? extractValue(row[columnMapping['parentId']], 'string') : null;
+      const projectId = 'projectId' in columnMapping ? extractValue(row[columnMapping['projectId']], 'string') : `project-${index}`;
+      const client = 'client' in columnMapping ? extractValue(row[columnMapping['client']], 'string') : undefined;
 
-      // Store both count and average score
-      categoryData[categoryValue] = { count: countValue, avgScore: avgScoreValue };
+      if (!startDate || !endDate) {
+        return;
+      }
 
-      // Extract and store order value if provided
-      if (hasOrderColumn && orderValueObj !== undefined && orderValueObj !== null) {
-        const orderValue = extractValue(orderValueObj, 'number');
-        if (!isNaN(orderValue)) {
-          categoryOrders[categoryValue] = orderValue;
-        }
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return;
+      }
+
+      projects.push({
+        id: projectId || `project-${index}`,
+        category: category || 'epic',
+        name: name || `Project ${index + 1}`,
+        startDate,
+        endDate,
+        assignee,
+        status: status || 'active',
+        hoursBilled,
+        hoursEstimated,
+        hoursBudgeted,
+        colorCode: colorCode || 'PURPLE',
+        parentId: parentId && parentId !== 'null' && parentId !== '' ? parentId : null,
+        client,
+        rowIndex: index,
+        depth: getCategoryDepth(category)
+      });
+
+      if (index === 0 || projects.length === 1) {
+        minDate = new Date(startDate);
+        maxDate = new Date(endDate);
+      } else {
+        if (startDate < minDate) minDate = new Date(startDate);
+        if (endDate > maxDate) maxDate = new Date(endDate);
       }
     });
   }
 
-  // Extract title from title slot column name only if provided
-  const customTitle = hasTitleColumn && legendSlot?.content?.[0]
-    ? formatTitle(extractColumnLabel(legendSlot.content[0], language, ''))
-    : undefined;
-
-  // Fallback: sample data
-  if (Object.keys(categoryData).length === 0) {
-    categoryData['Healthy'] = { count: 6, avgScore: 87 };
-    categoryData['Warning'] = { count: 4, avgScore: 65 };
-    categoryData['Error'] = { count: 2, avgScore: 35 };
-  }
-
-  // Store all category data for recalculation on filter
-  const allCategoryData = { ...categoryData };
-
-  // Determine sort order
-  let uniqueCategories: string[];
-  if (hasOrderColumn && Object.keys(categoryOrders).length > 0) {
-    // Sort by order column
-    uniqueCategories = Object.keys(categoryData).sort((a, b) => {
-      const orderA = categoryOrders[a] ?? 999;
-      const orderB = categoryOrders[b] ?? 999;
-      return orderA - orderB;
-    });
-  } else {
-    // Use hardcoded order: Healthy, Warning, Error
-    const orderedCategoryNames = ['Healthy', 'Warning', 'Error'];
-    uniqueCategories = orderedCategoryNames.filter(cat => categoryData[cat] !== undefined);
-    // Add any categories not in the hardcoded list
-    Object.keys(categoryData).forEach(cat => {
-      if (!uniqueCategories.includes(cat)) {
-        uniqueCategories.push(cat);
+  // Fallback sample data for demonstration
+  if (projects.length === 0) {
+    const sampleProjects: Project[] = [
+      {
+        id: 'ORG_CLIENT_A',
+        category: 'organization',
+        name: 'Enterprise Platform',
+        startDate: new Date('2024-09-15'),
+        endDate: new Date('2025-01-15'),
+        assignee: 'J. Smith',
+        status: 'active',
+        hoursBilled: 320,
+        hoursEstimated: 300,
+        hoursBudgeted: 350,
+        parentId: null,
+        client: 'Client A',
+        colorCode: 'PURPLE',
+        rowIndex: 0,
+        depth: 0
+      },
+      {
+        id: 'EPIC_MOBILE_APP',
+        category: 'epic',
+        name: 'Mobile Development',
+        startDate: new Date('2024-09-20'),
+        endDate: new Date('2024-12-15'),
+        assignee: 'T. Johnson',
+        status: 'active',
+        hoursBilled: 220,
+        hoursEstimated: 240,
+        hoursBudgeted: 260,
+        parentId: 'ORG_CLIENT_A',
+        client: 'Client A',
+        colorCode: 'ORANGE',
+        rowIndex: 1,
+        depth: 1
+      },
+      {
+        id: 'EPIC_DATA_MIGRATION',
+        category: 'epic',
+        name: 'Data Integration',
+        startDate: new Date('2024-08-15'),
+        endDate: new Date('2025-01-15'),
+        assignee: 'M. Williams',
+        status: 'at risk',
+        hoursBilled: 180,
+        hoursEstimated: 200,
+        hoursBudgeted: 220,
+        parentId: 'ORG_CLIENT_A',
+        client: 'Client A',
+        colorCode: 'ORANGE',
+        rowIndex: 2,
+        depth: 1
+      },
+      {
+        id: 'ORG_CLIENT_B',
+        category: 'organization',
+        name: 'Digital Transformation',
+        startDate: new Date('2024-09-15'),
+        endDate: new Date('2024-12-31'),
+        assignee: 'R. Davis',
+        status: 'active',
+        hoursBilled: 150,
+        hoursEstimated: 180,
+        hoursBudgeted: 190,
+        parentId: null,
+        client: 'Client B',
+        colorCode: 'PURPLE',
+        rowIndex: 3,
+        depth: 0
+      },
+      {
+        id: 'ORG_CLIENT_C',
+        category: 'organization',
+        name: 'Cloud Modernization',
+        startDate: new Date('2024-09-15'),
+        endDate: new Date('2025-01-31'),
+        assignee: 'K. Martinez',
+        status: 'active',
+        hoursBilled: 260,
+        hoursEstimated: 260,
+        hoursBudgeted: 280,
+        parentId: null,
+        client: 'Client C',
+        colorCode: 'PURPLE',
+        rowIndex: 4,
+        depth: 0
+      },
+      {
+        id: 'EPIC_API_PLATFORM',
+        category: 'epic',
+        name: 'API Platform',
+        startDate: new Date('2024-09-01'),
+        endDate: new Date('2024-12-15'),
+        assignee: 'K. Martinez',
+        status: 'active',
+        hoursBilled: 140,
+        hoursEstimated: 160,
+        hoursBudgeted: 180,
+        parentId: 'ORG_CLIENT_C',
+        client: 'Client C',
+        colorCode: 'ORANGE',
+        rowIndex: 5,
+        depth: 1
+      },
+      {
+        id: 'STORY_AUTH_SECURITY',
+        category: 'story',
+        name: 'Security Module',
+        startDate: new Date('2024-10-01'),
+        endDate: new Date('2024-11-30'),
+        assignee: 'L. Brown',
+        status: 'completed',
+        hoursBilled: 80,
+        hoursEstimated: 80,
+        hoursBudgeted: 90,
+        parentId: 'EPIC_API_PLATFORM',
+        client: 'Client C',
+        colorCode: 'GREEN',
+        rowIndex: 6,
+        depth: 2
+      },
+      {
+        id: 'STORY_UI_COMPONENTS',
+        category: 'story',
+        name: 'Component Library',
+        startDate: new Date('2024-10-15'),
+        endDate: new Date('2024-11-15'),
+        assignee: null,
+        status: 'in planning',
+        hoursBilled: null,
+        hoursEstimated: 40,
+        hoursBudgeted: 50,
+        parentId: 'EPIC_API_PLATFORM',
+        client: 'Client C',
+        colorCode: 'PURPLE',
+        rowIndex: 7,
+        depth: 2
+      },
+      {
+        id: 'EPIC_REPORTING_ENGINE',
+        category: 'epic',
+        name: 'Reporting Engine',
+        startDate: new Date('2024-07-09'),
+        endDate: new Date('2025-01-31'),
+        assignee: 'A. Anderson',
+        status: 'active',
+        hoursBilled: 210,
+        hoursEstimated: 230,
+        hoursBudgeted: 250,
+        parentId: 'ORG_CLIENT_C',
+        client: 'Client C',
+        colorCode: 'ORANGE',
+        rowIndex: 8,
+        depth: 1
+      },
+      {
+        id: 'DEAL_CLIENT_A_PHASE2',
+        category: 'deal',
+        name: 'Phase 2 Expansion',
+        startDate: new Date('2024-12-01'),
+        endDate: new Date('2025-01-15'),
+        assignee: null,
+        status: 'pipeline',
+        hoursBilled: null,
+        hoursEstimated: null,
+        hoursBudgeted: null,
+        parentId: 'ORG_CLIENT_A',
+        client: 'Client A',
+        colorCode: 'GRAY',
+        rowIndex: 9,
+        depth: 1
       }
-    });
+    ];
+
+    projects.push(...sampleProjects);
+    minDate = new Date('2024-07-01');
+    maxDate = new Date('2025-02-01');
   }
 
-  // Calculate overall total across all categories (for percentage display)
-  const overallTotal = uniqueCategories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
+  // Add padding to date range
+  const paddingDays = 7;
+  minDate = new Date(minDate.getTime() - paddingDays * 24 * 60 * 60 * 1000);
+  maxDate = new Date(maxDate.getTime() + paddingDays * 24 * 60 * 60 * 1000);
 
-  // Filter data if category is selected
-  let filteredCategories = uniqueCategories;
-  if (selectedCategory) {
-    filteredCategories = uniqueCategories.filter(cat => cat === selectedCategory);
-  }
+  // Build hierarchy from flat list
+  const hierarchy = buildHierarchy(projects);
 
-  // Calculate total and aggregated score (based on filtered data)
-  const total = filteredCategories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
-  const aggregatedScore = calculateAggregatedScore(filteredCategories, categoryData);
-
-  // Build categories array
-  const categories: StatusCategory[] = uniqueCategories.map(categoryValue => ({
-    name: categoryValue,
-    count: categoryData[categoryValue].count,
-    color: getCategoryColor(categoryValue, categoryOrders, hasOrderColumn),
-    columnId: categorySlot?.content?.[0]?.columnId,
-    datasetId: categorySlot?.content?.[0]?.datasetId,
-    value: categoryValue
-  }));
+  // Flatten back for rendering with proper depths
+  const flatProjects = flattenHierarchy(hierarchy);
 
   return {
-    categories,
-    total,
-    overallTotal,
-    aggregatedScore,
-    categorySlot,
-    sizeSlot,
-    measureSlot,
-    orderSlot,
-    legendSlot,
-    selectedCategory: selectedCategory || null,
-    title: customTitle,
-    allCategoryData
+    projects: hierarchy,
+    flatProjects,
+    minDate,
+    maxDate
   };
 }
 
-/**
- * Get color for category based on order or name mapping
- */
-function getCategoryColor(
-  categoryValue: string,
-  categoryOrders: Record<string, number>,
-  hasOrderColumn: boolean
-): string {
-  const healthyColor = '#75BB43';
-  const warningColor = '#FEC325';
-  const errorColor = '#BA1A1A';
-
-  const colorMapping: Record<string, string> = {
-    'Healthy': healthyColor,
-    'Warning': warningColor,
-    'Error': errorColor
+function getCategoryDepth(category: string): number {
+  const depthMap: Record<string, number> = {
+    'organization': 0,
+    'epic': 1,
+    'story': 2,
+    'deal': 1
   };
-
-  // Use order-based color if order column exists
-  if (hasOrderColumn && categoryOrders[categoryValue] !== undefined) {
-    const orderValue = categoryOrders[categoryValue];
-    const colorArray = [healthyColor, warningColor, errorColor];
-    return colorArray[orderValue % colorArray.length];
-  }
-
-  // Fallback to name-based color mapping
-  return colorMapping[categoryValue] || healthyColor;
+  return depthMap[category.toLowerCase()] || 0;
 }
 
 /**
- * Calculate aggregated score from categories
+ * Build hierarchy from flat list of projects using parentId relationships
  */
-function calculateAggregatedScore(
-  categories: string[],
-  categoryData: Record<string, { count: number; avgScore: number }>
-): number {
-  const total = categories.reduce((sum, cat) => sum + categoryData[cat].count, 0);
-  const weightedSum = categories.reduce((sum, cat) =>
-    sum + (categoryData[cat].count * categoryData[cat].avgScore), 0);
-  return total > 0 ? Math.round(weightedSum / total) : 0;
+function buildHierarchy(projects: Project[]): Project[] {
+  // Create a map for quick lookup
+  const projectMap = new Map<string, Project>();
+  projects.forEach(p => {
+    projectMap.set(p.id, { ...p, children: [], isExpanded: true });
+  });
+
+  const roots: Project[] = [];
+
+  // Build parent-child relationships
+  projects.forEach(project => {
+    const node = projectMap.get(project.id)!;
+    if (!project.parentId) {
+      roots.push(node);
+    } else {
+      const parent = projectMap.get(project.parentId);
+      if (parent && parent.children) {
+        parent.children.push(node);
+      } else {
+        // If parent not found, treat as root
+        roots.push(node);
+      }
+    }
+  });
+
+  return roots;
+}
+
+/**
+ * Flatten hierarchy tree for rendering, calculating depths
+ */
+function flattenHierarchy(projects: Project[], depth: number = 0): Project[] {
+  const result: Project[] = [];
+
+  projects.forEach(project => {
+    const flatProject = { ...project, depth };
+    result.push(flatProject);
+
+    if (project.isExpanded && project.children && project.children.length > 0) {
+      result.push(...flattenHierarchy(project.children, depth + 1));
+    }
+  });
+
+  return result;
 }
 
 // ============================================================================
-// MAIN RENDER FUNCTIONS
+// MAIN RENDER FUNCTION
 // ============================================================================
 
-/**
- * Render the status widget
- */
 export const render = ({
   container,
   data = [],
@@ -397,23 +565,15 @@ export const render = ({
   dimensions: { width, height } = { width: 0, height: 0 }
 }: ChartParams): void => {
   const theme = resolveTheme(options.theme);
-  const state = processData(data, slots, theme.colors, language);
+  const state = processData(data, slots, language);
 
-  // Store data for recalculation on filter
+  // Store state for resize
   (container as any).__chartState = state;
   (container as any).__theme = theme;
-  (container as any).__data = data;
-  (container as any).__slots = slots;
-  (container as any).__language = language;
-  (container as any).__width = width;
-  (container as any).__height = height;
 
-  renderWidget(container, state, theme, width, height);
+  renderGanttChart(container, state, theme, width, height);
 };
 
-/**
- * Resize handler
- */
 export const resize = ({
   container,
   slots = [],
@@ -426,96 +586,552 @@ export const resize = ({
   const theme = options.theme ? resolveTheme(options.theme) : (container as any).__theme;
 
   if (state && theme) {
-    (container as any).__theme = theme;
-    renderWidget(container, state, theme, width, height);
+    renderGanttChart(container, state, theme, width, height);
   }
 };
 
-/**
- * Get background color based on aggregated score
- */
-function getBackgroundColor(score: number): string {
-  if (score >= 81) return '#F3FBED'; // Healthy
-  if (score >= 51) return '#FFF9F0'; // Warning
-  return '#FFF6F7'; // Error
-}
+// ============================================================================
+// GANTT CHART RENDERING
+// ============================================================================
 
-/**
- * Main widget rendering function
- */
-function renderWidget(
+function renderGanttChart(
   container: HTMLElement,
   state: ChartState,
   theme: ThemeContext,
   width: number,
   height: number
 ): void {
-  // Clear container
   container.innerHTML = '';
   container.style.backgroundColor = theme.backgroundColor;
-  // Font family is set in CSS to Roboto
+  container.style.fontFamily = theme.fontFamily;
 
-  // Handle empty state
-  if (state.total === 0 || state.categories.length === 0) {
+  if (state.projects.length === 0) {
     renderEmptyState(container, theme);
     return;
   }
 
-  // Create main container with conditional background
-  const widget = document.createElement('div');
-  widget.className = 'status-widget';
+  // Create main container
+  const mainContainer = document.createElement('div');
+  mainContainer.className = 'gantt-container';
+  container.appendChild(mainContainer);
 
-  // Set conditional background color based on score
-  const backgroundColor = getBackgroundColor(state.aggregatedScore);
-  widget.style.backgroundColor = backgroundColor;
+  // Create header
+  const header = document.createElement('div');
+  header.className = 'gantt-header';
+  header.style.color = theme.textColor;
+  mainContainer.appendChild(header);
 
-  container.appendChild(widget);
+  const title = document.createElement('h2');
+  title.className = 'gantt-title';
+  title.textContent = 'Project Status Dashboard';
+  header.appendChild(title);
 
-  // Add title (use custom title if provided, otherwise default)
-  const title = document.createElement('div');
-  title.className = 'widget-title';
-  title.textContent = state.title || 'Health Score Status';
-  title.style.color = theme.textColor;
-  widget.appendChild(title);
+  // Create content area
+  const contentArea = document.createElement('div');
+  contentArea.className = 'gantt-content';
+  mainContainer.appendChild(contentArea);
 
-  // Frame 1010107938 - wrapper with gap: 12px
-  const contentWrapper = document.createElement('div');
-  contentWrapper.className = 'content-wrapper';
-  widget.appendChild(contentWrapper);
+  // Create left panel (project names)
+  const leftPanel = document.createElement('div');
+  leftPanel.className = 'gantt-left-panel';
+  leftPanel.style.width = `${LEFT_PANEL_WIDTH}px`;
+  contentArea.appendChild(leftPanel);
 
-  // Frame 3467150 - center container
-  const centerContainer = document.createElement('div');
-  centerContainer.className = 'center-container';
-  contentWrapper.appendChild(centerContainer);
+  // Create left panel header (spacer to align with timeline header)
+  const leftPanelHeader = document.createElement('div');
+  leftPanelHeader.className = 'gantt-left-header';
+  leftPanelHeader.style.height = `${TIMELINE_HEADER_HEIGHT}px`;
+  leftPanelHeader.style.borderBottom = '2px solid #E2E8F0';
+  leftPanelHeader.style.flexShrink = '0';
+  leftPanel.appendChild(leftPanelHeader);
 
-  // Frame 1010107450 - content with 51px gap between categories and chart
-  const widgetContent = document.createElement('div');
-  widgetContent.className = 'widget-content';
+  // Create left panel body (scrollable project names)
+  const leftPanelBody = document.createElement('div');
+  leftPanelBody.className = 'gantt-left-body';
+  leftPanelBody.style.flex = '1';
+  leftPanelBody.style.overflowY = 'auto';
+  leftPanelBody.style.overflowX = 'hidden';
+  leftPanel.appendChild(leftPanelBody);
 
-  // Determine layout based on aspect ratio: vertical if height > width, horizontal otherwise
-  if (height > width) {
-    widgetContent.classList.add('layout-vertical');
-  }
+  // Create right panel (timeline)
+  const rightPanel = document.createElement('div');
+  rightPanel.className = 'gantt-right-panel';
+  contentArea.appendChild(rightPanel);
 
-  centerContainer.appendChild(widgetContent);
+  // Render timeline
+  const timelineWidth = width - LEFT_PANEL_WIDTH - PADDING * 2;
+  const timelineHeight = height - TIMELINE_HEADER_HEIGHT - PADDING * 2;
 
-  // Render categories list in widget content
-  renderCategoriesList(widgetContent, state, theme);
-
-  // Render chart in widget content
-  renderDonutChart(widgetContent, state, theme, width * 0.45);
-
-  // Add click handlers for filtering
-  addInteractionHandlers(container, state, theme, width, height);
+  renderTimeline(rightPanel, leftPanelBody, state, theme, timelineWidth, timelineHeight);
 }
 
-// ============================================================================
-// RENDERING COMPONENTS
-// ============================================================================
+function renderTimeline(
+  rightPanel: HTMLElement,
+  leftPanel: HTMLElement,
+  state: ChartState,
+  theme: ThemeContext,
+  width: number,
+  height: number
+): void {
+  // Create timeline header
+  const timelineHeader = document.createElement('div');
+  timelineHeader.className = 'timeline-header';
+  timelineHeader.style.height = `${TIMELINE_HEADER_HEIGHT}px`;
+  rightPanel.appendChild(timelineHeader);
 
-/**
- * Render empty state when no data is available
- */
+  // Create timeline body container
+  const timelineBody = document.createElement('div');
+  timelineBody.className = 'timeline-body';
+  rightPanel.appendChild(timelineBody);
+
+  // Use flatProjects length for height calculation
+  const projectCount = state.flatProjects ? state.flatProjects.length : state.projects.length;
+  const svgHeight = projectCount * ROW_HEIGHT;
+
+
+  // Create SVG for timeline
+  const svg = d3.select(timelineBody)
+    .append('svg')
+    .attr('width', width)
+    .attr('height', svgHeight)
+    .attr('class', 'timeline-svg');
+
+  // Create time scale
+  const xScale = d3.scaleTime()
+    .domain([state.minDate, state.maxDate])
+    .range([0, width]);
+
+  // Render timeline header with months and weeks
+  renderTimelineHeader(timelineHeader, xScale, width, theme);
+
+  // Render project rows
+  renderProjectRows(leftPanel, timelineBody, svg, state, xScale, theme);
+}
+
+function renderTimelineHeader(
+  container: HTMLElement,
+  xScale: d3.ScaleTime<number, number>,
+  width: number,
+  theme: ThemeContext
+): void {
+  const [minDate, maxDate] = xScale.domain();
+
+  // Create SVG for header
+  const svg = d3.select(container)
+    .append('svg')
+    .attr('width', width)
+    .attr('height', TIMELINE_HEADER_HEIGHT)
+    .attr('class', 'timeline-header-svg');
+
+  // Calculate months in range
+  const months: Date[] = [];
+  let currentDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+
+  while (currentDate <= maxDate) {
+    months.push(new Date(currentDate));
+    currentDate.setMonth(currentDate.getMonth() + 1);
+  }
+
+  // Render month headers
+  const monthFormat = d3.timeFormat('%b %Y');
+
+  months.forEach((monthDate, index) => {
+    const nextMonth = new Date(monthDate);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+    const x1 = Math.max(0, xScale(monthDate));
+    const x2 = Math.min(width, xScale(nextMonth));
+    const monthWidth = x2 - x1;
+
+    if (monthWidth > 0) {
+      svg.append('rect')
+        .attr('x', x1)
+        .attr('y', 0)
+        .attr('width', monthWidth)
+        .attr('height', 30)
+        .attr('fill', index % 2 === 0 ? '#F8FAFC' : '#F1F5F9')
+        .attr('stroke', '#E2E8F0')
+        .attr('stroke-width', 1);
+
+      svg.append('text')
+        .attr('x', x1 + monthWidth / 2)
+        .attr('y', 20)
+        .attr('text-anchor', 'middle')
+        .attr('fill', theme.textColor)
+        .attr('font-size', '12px')
+        .attr('font-weight', '600')
+        .text(monthFormat(monthDate));
+    }
+  });
+
+  // Render week grid lines
+  const weekFormat = d3.timeFormat('W%V');
+  let weekDate = new Date(minDate);
+  weekDate.setDate(weekDate.getDate() - weekDate.getDay() + 1); // Monday
+
+  while (weekDate <= maxDate) {
+    const x = xScale(weekDate);
+    if (x >= 0 && x <= width) {
+      svg.append('line')
+        .attr('x1', x)
+        .attr('y1', 30)
+        .attr('x2', x)
+        .attr('y2', TIMELINE_HEADER_HEIGHT)
+        .attr('stroke', '#E2E8F0')
+        .attr('stroke-width', 1);
+
+      svg.append('text')
+        .attr('x', x + 20)
+        .attr('y', 50)
+        .attr('text-anchor', 'middle')
+        .attr('fill', theme.textColor)
+        .attr('font-size', '10px')
+        .attr('opacity', 0.6)
+        .text(weekFormat(weekDate));
+    }
+    weekDate.setDate(weekDate.getDate() + 7);
+  }
+}
+
+function renderProjectRows(
+  leftPanel: HTMLElement,
+  timelineBody: HTMLElement,
+  svg: d3.Selection<SVGSVGElement, unknown, HTMLElement, any>,
+  state: ChartState,
+  xScale: d3.ScaleTime<number, number>,
+  theme: ThemeContext
+): void {
+  // Use flatProjects for rendering
+  const projectsToRender = state.flatProjects || state.projects;
+
+
+  // Render left panel rows
+  projectsToRender.forEach((project, index) => {
+    const row = document.createElement('div');
+    row.className = 'project-row';
+    row.style.height = `${ROW_HEIGHT}px`;
+    row.style.color = theme.textColor;
+
+    // Style row based on category level for visual hierarchy
+    const isTopLevel = project.category === 'organization';
+    if (isTopLevel) {
+      row.style.backgroundColor = '#F8FAFC';
+      row.style.borderTop = '1px solid #CBD5E1';
+      row.style.borderBottom = '1px solid #E2E8F0';
+    }
+
+    // Create content wrapper with hierarchy indentation
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'project-row-content';
+    contentWrapper.style.position = 'relative';
+    contentWrapper.style.paddingLeft = `${project.depth * 20 + 8}px`;
+
+    // Add expand/collapse indicator if project has children (positioned absolutely before the text)
+    if (project.children && project.children.length > 0) {
+      const expandIcon = document.createElement('span');
+      expandIcon.className = 'expand-icon';
+      expandIcon.textContent = project.isExpanded ? '▼' : '▶';
+      expandIcon.style.cursor = 'pointer';
+      expandIcon.style.color = theme.mainColor;
+      expandIcon.style.position = 'absolute';
+      expandIcon.style.left = `${project.depth * 20 - 8}px`;
+      expandIcon.style.top = '50%';
+      expandIcon.style.transform = 'translateY(-50%)';
+      contentWrapper.appendChild(expandIcon);
+    }
+
+    // Project name container
+    const nameContainer = document.createElement('div');
+    nameContainer.className = 'project-name-container';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'project-name';
+    nameSpan.textContent = project.name;
+    nameSpan.style.fontWeight = isTopLevel ? '600' : '500';
+    nameContainer.appendChild(nameSpan);
+
+    contentWrapper.appendChild(nameContainer);
+
+    // Metadata section (right side)
+    const metaSection = document.createElement('div');
+    metaSection.className = 'project-meta-section';
+
+    // Client badge for top-level items only (show first)
+    if (isTopLevel && project.client) {
+      const clientBadge = document.createElement('span');
+      clientBadge.className = 'client-badge';
+      clientBadge.textContent = project.client;
+      metaSection.appendChild(clientBadge);
+    }
+
+    // Category badge (show after client)
+    const categoryBadge = document.createElement('span');
+    categoryBadge.className = 'category-badge';
+    categoryBadge.textContent = project.category.toUpperCase();
+    categoryBadge.title = project.category;
+    metaSection.appendChild(categoryBadge);
+
+    contentWrapper.appendChild(metaSection);
+
+    row.appendChild(contentWrapper);
+    leftPanel.appendChild(row);
+  });
+
+
+  // Render grid lines FIRST (so they appear behind bars)
+  const [minDate, maxDate] = xScale.domain();
+  let weekDate = new Date(minDate);
+  weekDate.setDate(weekDate.getDate() - weekDate.getDay() + 1);
+
+  while (weekDate <= maxDate) {
+    const x = xScale(weekDate);
+    if (x >= 0 && x <= xScale.range()[1]) {
+      svg.append('line')
+        .attr('x1', x)
+        .attr('y1', 0)
+        .attr('x2', x)
+        .attr('y2', projectsToRender.length * ROW_HEIGHT)
+        .attr('stroke', '#E2E8F0')
+        .attr('stroke-width', 1)
+        .attr('opacity', 0.3);
+    }
+    weekDate.setDate(weekDate.getDate() + 7);
+  }
+
+  // Render timeline bars
+  const barsRendered: string[] = [];
+  const barsSkipped: string[] = [];
+
+  projectsToRender.forEach((project, index) => {
+    const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
+
+    const barGroup = svg.append('g')
+      .attr('class', 'bar-group')
+      .attr('transform', `translate(0, ${yPosition})`);
+
+    const x1 = xScale(project.startDate);
+    const x2 = xScale(project.endDate);
+    const barWidth = Math.max(x2 - x1, 20);
+
+    // Track rendering
+    const isOffScreen = x1 < 0 || x2 < 0 || x1 > xScale.range()[1] || x2 > xScale.range()[1];
+    if (isOffScreen) {
+      barsSkipped.push(project.name);
+    } else {
+      barsRendered.push(project.name);
+    }
+
+    const barColor = COLOR_MAP[project.colorCode] || COLOR_MAP['PURPLE'];
+
+    // Background bar
+    barGroup.append('rect')
+      .attr('x', x1)
+      .attr('y', 0)
+      .attr('width', barWidth)
+      .attr('height', BAR_HEIGHT)
+      .attr('rx', 4)
+      .attr('fill', barColor)
+      .attr('opacity', 0.3);
+
+    // Progress bar
+    const progress = calculateProgress(project.hoursBilled, project.hoursBudgeted);
+    if (progress > 0) {
+      barGroup.append('rect')
+        .attr('x', x1)
+        .attr('y', 0)
+        .attr('width', barWidth * progress)
+        .attr('height', BAR_HEIGHT)
+        .attr('rx', 4)
+        .attr('fill', barColor);
+    }
+
+    // Calculate available space and determine what to show
+    const minBarWidthForLabels = 120;
+    const minBarWidthForInitials = 60;
+    const showLabels = barWidth >= minBarWidthForLabels;
+    const showInitials = barWidth >= minBarWidthForInitials;
+
+    let currentX = x1 + 8; // Start position for content
+
+    // Status indicator (modern badge style)
+    const statusColor = STATUS_COLORS[project.status.toLowerCase()] || STATUS_COLORS['active'];
+    if (showLabels || showInitials) {
+      barGroup.append('circle')
+        .attr('cx', currentX + 5)
+        .attr('cy', BAR_HEIGHT / 2)
+        .attr('r', 5)
+        .attr('fill', statusColor)
+        .attr('stroke', '#FFFFFF')
+        .attr('stroke-width', 1.5);
+
+      currentX += 18;
+    }
+
+    // Assignee initials (glass pill style)
+    const initials = getInitials(project.assignee);
+    if (initials && showInitials) {
+      const pillWidth = 28;
+      const pillHeight = 20;
+
+      barGroup.append('rect')
+        .attr('x', currentX)
+        .attr('y', BAR_HEIGHT / 2 - pillHeight / 2)
+        .attr('width', pillWidth)
+        .attr('height', pillHeight)
+        .attr('rx', pillHeight / 2)
+        .attr('fill', '#FFFFFF')
+        .attr('opacity', 0.6)
+        .attr('stroke', 'rgba(255, 255, 255, 0.3)')
+        .attr('stroke-width', 1);
+
+      barGroup.append('text')
+        .attr('x', currentX + pillWidth / 2)
+        .attr('y', BAR_HEIGHT / 2 + 4)
+        .attr('text-anchor', 'middle')
+        .attr('fill', barColor)
+        .attr('font-size', '10px')
+        .attr('font-weight', '700')
+        .text(initials);
+
+      currentX += pillWidth + 8;
+    }
+
+    // Hours display (modern glass badge style)
+    const hoursText = formatHoursDisplay(project.hoursBilled, project.hoursEstimated, project.hoursBudgeted);
+    if (project.hoursBudgeted !== null && showLabels) {
+      const badgePadding = 6;
+      const badgeTextWidth = hoursText.length * 6;
+      const badgeWidth = badgeTextWidth + badgePadding * 2;
+      const badgeHeight = 18;
+
+      // Only show if there's enough space remaining in the bar
+      if (currentX + badgeWidth < x1 + barWidth - 8) {
+        // Subtle glass badge background
+        barGroup.append('rect')
+          .attr('x', currentX)
+          .attr('y', BAR_HEIGHT / 2 - badgeHeight / 2)
+          .attr('width', badgeWidth)
+          .attr('height', badgeHeight)
+          .attr('rx', 4)
+          .attr('fill', '#FFFFFF')
+          .attr('opacity', 0.5)
+          .attr('stroke', 'rgba(0, 0, 0, 0.08)')
+          .attr('stroke-width', 0.5);
+
+        barGroup.append('text')
+          .attr('x', currentX + badgeWidth / 2)
+          .attr('y', BAR_HEIGHT / 2 + 4)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#1E293B')
+          .attr('font-size', '10px')
+          .attr('font-weight', '600')
+          .text(hoursText);
+
+        currentX += badgeWidth + 8;
+      }
+    }
+
+    // Percentage indicator at the end of the bar
+    if (project.hoursBilled !== null && project.hoursBudgeted !== null && project.hoursBudgeted > 0) {
+      const percentage = Math.round((project.hoursBilled / project.hoursBudgeted) * 100);
+      const percentText = `${percentage}%`;
+      const percentBadgeWidth = 36;
+      const percentBadgeHeight = 20;
+      const percentX = x2 - percentBadgeWidth - 6;
+
+      // Only show if there's space
+      if (percentX > x1 + 50) {
+        // Subtle percentage badge
+        barGroup.append('rect')
+          .attr('x', percentX)
+          .attr('y', BAR_HEIGHT / 2 - percentBadgeHeight / 2)
+          .attr('width', percentBadgeWidth)
+          .attr('height', percentBadgeHeight)
+          .attr('rx', percentBadgeHeight / 2)
+          .attr('fill', barColor)
+          .attr('opacity', 0.6);
+
+        barGroup.append('text')
+          .attr('x', percentX + percentBadgeWidth / 2)
+          .attr('y', BAR_HEIGHT / 2 + 4)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#FFFFFF')
+          .attr('font-size', '9px')
+          .attr('font-weight', '600')
+          .text(percentText);
+      }
+    }
+
+    // End date label (outside bar on the right)
+    const dateFormat = d3.timeFormat('%b %d');
+    barGroup.append('text')
+      .attr('x', x2 + 8)
+      .attr('y', BAR_HEIGHT / 2 + 4)
+      .attr('fill', theme.textColor)
+      .attr('font-size', '10px')
+      .attr('font-weight', '500')
+      .attr('opacity', 0.6)
+      .text(dateFormat(project.endDate));
+
+    // Add tooltip on hover using a foreignObject for better HTML tooltips
+    barGroup
+      .on('mouseenter', function(event) {
+        // Create tooltip
+        const tooltip = d3.select(timelineBody)
+          .append('div')
+          .attr('class', 'gantt-tooltip')
+          .style('position', 'absolute')
+          .style('background', 'rgba(0, 0, 0, 0.9)')
+          .style('color', 'white')
+          .style('padding', '12px')
+          .style('border-radius', '8px')
+          .style('font-size', '12px')
+          .style('pointer-events', 'none')
+          .style('z-index', '1000')
+          .style('box-shadow', '0 4px 12px rgba(0, 0, 0, 0.3)');
+
+        let tooltipHTML = `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${project.name}</div>`;
+        if (project.client) tooltipHTML += `<div><strong>Client:</strong> ${project.client}</div>`;
+        tooltipHTML += `<div><strong>Category:</strong> ${project.category}</div>`;
+        tooltipHTML += `<div><strong>Status:</strong> ${project.status}</div>`;
+        tooltipHTML += `<div><strong>Assignee:</strong> ${project.assignee || 'Unassigned'}</div>`;
+        tooltipHTML += `<div><strong>Hours:</strong> ${hoursText}</div>`;
+        tooltipHTML += `<div><strong>Duration:</strong> ${dateFormat(project.startDate)} - ${dateFormat(project.endDate)}</div>`;
+
+        tooltip.html(tooltipHTML);
+
+        // Position tooltip
+        const [mouseX, mouseY] = d3.pointer(event, timelineBody);
+        tooltip
+          .style('left', `${mouseX + 15}px`)
+          .style('top', `${mouseY - 15}px`);
+      })
+      .on('mousemove', function(event) {
+        const tooltip = d3.select(timelineBody).select('.gantt-tooltip');
+        const [mouseX, mouseY] = d3.pointer(event, timelineBody);
+        tooltip
+          .style('left', `${mouseX + 15}px`)
+          .style('top', `${mouseY - 15}px`);
+      })
+      .on('mouseleave', function() {
+        d3.select(timelineBody).selectAll('.gantt-tooltip').remove();
+      });
+  });
+
+
+  // Synchronize scroll between left panel and timeline body
+  const leftPanelContainer = leftPanel;
+  const timelineBodyContainer = timelineBody;
+
+  leftPanelContainer.addEventListener('scroll', () => {
+    timelineBodyContainer.scrollTop = leftPanelContainer.scrollTop;
+  });
+
+  timelineBodyContainer.addEventListener('scroll', () => {
+    leftPanelContainer.scrollTop = timelineBodyContainer.scrollTop;
+  });
+}
+
 function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
   const emptyState = document.createElement('div');
   emptyState.className = 'empty-state';
@@ -528,351 +1144,21 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 
   const title = document.createElement('div');
   title.className = 'empty-state-title';
-  title.textContent = 'No Data Available';
+  title.textContent = 'No Project Data Available';
   emptyState.appendChild(title);
 
   const message = document.createElement('div');
   message.className = 'empty-state-message';
-  message.textContent = 'Add up to 3 numeric columns to the "Status Metrics" slot to get started.';
+  message.textContent = 'Add project data to the required slots to display the Gantt chart.';
   emptyState.appendChild(message);
 
   container.appendChild(emptyState);
-}
-
-/**
- * Handle tooltip positioning to keep it within container bounds
- */
-function positionTooltip(
-  tooltip: d3.Selection<HTMLDivElement, unknown, HTMLElement, any>,
-  event: MouseEvent,
-  container: HTMLElement
-): void {
-  const tooltipNode = tooltip.node() as HTMLElement;
-  const tooltipRect = tooltipNode.getBoundingClientRect();
-  const containerRect = container.getBoundingClientRect();
-
-  let left = event.offsetX + 10;
-  let top = event.offsetY - 10;
-
-  // Keep tooltip within horizontal bounds
-  if (left + tooltipRect.width > containerRect.width) {
-    left = event.offsetX - tooltipRect.width - 10;
-  }
-  if (left < 0) {
-    left = 10;
-  }
-
-  // Keep tooltip within vertical bounds
-  if (top + tooltipRect.height > containerRect.height) {
-    top = event.offsetY - tooltipRect.height - 10;
-  }
-  if (top < 0) {
-    top = 10;
-  }
-
-  tooltip.style('left', `${left}px`).style('top', `${top}px`);
-}
-
-/**
- * Render the donut chart with center metric - Figma specs
- */
-function renderDonutChart(
-  container: HTMLElement,
-  state: ChartState,
-  theme: ThemeContext,
-  containerWidth: number
-): void {
-  // Fixed size from Figma: 120px x 120px with 14px stroke
-  // CSS scales it to 80px in vertical layout
-  const size = 120;
-  const strokeWidth = 14;
-
-  const radius = size / 2;
-  const innerRadius = radius - strokeWidth;
-
-  const svg = d3.select(container)
-    .append('svg')
-    .attr('width', size)
-    .attr('height', size)
-    .attr('class', 'donut-chart')
-    .style('overflow', 'visible');
-
-  const g = svg.append('g')
-    .attr('transform', `translate(${radius},${radius})`)
-    .style('overflow', 'visible');
-
-  // Create tooltip
-  const tooltip = d3.select(container)
-    .append('div')
-    .attr('class', 'donut-tooltip')
-    .style('opacity', 0);
-
-  // Prepare data for pie chart
-  // If filtered, show selected category + empty segment to show proportion
-  let pieData: StatusCategory[];
-  if (state.selectedCategory) {
-    const selectedCat = state.categories.find(cat => cat.value === state.selectedCategory);
-    if (selectedCat) {
-      // Calculate the "empty" portion
-      const emptyCount = state.overallTotal - selectedCat.count;
-      pieData = [
-        selectedCat,
-        {
-          name: '__empty__',
-          count: emptyCount,
-          color: 'transparent',
-          value: '__empty__'
-        } as StatusCategory
-      ];
-    } else {
-      pieData = state.categories;
-    }
-  } else {
-    pieData = state.categories;
-  }
-
-  // Create pie layout
-  const pie = d3.pie<StatusCategory>()
-    .value(d => d.count)
-    .sort(null);
-
-  const arc = d3.arc<d3.PieArcDatum<StatusCategory>>()
-    .innerRadius(innerRadius)
-    .outerRadius(radius);
-
-  // Render segments
-  const segments = g.selectAll('.segment')
-    .data(pie(pieData))
-    .enter()
-    .append('g')
-    .attr('class', 'segment');
-
-  segments.append('path')
-    .attr('d', arc)
-    .attr('fill', d => d.data.color)
-    .attr('stroke', d => d.data.name === '__empty__' ? 'none' : '#FFF')
-    .attr('stroke-width', d => d.data.name === '__empty__' ? 0 : 1)
-    .attr('data-category', d => d.data.name)
-    .style('cursor', d => d.data.name === '__empty__' ? 'default' : 'pointer')
-    .on('mouseover', function(event, d) {
-      if (d.data.name === '__empty__') return;
-
-      const percentage = state.overallTotal > 0 ? Math.round((d.data.count / state.overallTotal) * 100) : 0;
-
-      tooltip
-        .style('opacity', 1)
-        .html(`
-          <div class="tooltip-category">${d.data.name}</div>
-          <div class="tooltip-stats">
-            <div><strong>${d.data.count}</strong> records</div>
-            <div><strong>${percentage}%</strong> of total</div>
-          </div>
-        `);
-
-      positionTooltip(tooltip, event, container);
-    })
-    .on('mouseout', function(event, d) {
-      if (d.data.name === '__empty__') return;
-      tooltip.style('opacity', 0);
-    });
-
-  // Center text - animated aggregated score - Figma: display-3
-  const fontSize = 40; // Fixed from Figma
-  const lineHeight = 46; // Fixed from Figma
-  const targetValue = state.aggregatedScore;
-
-  // Get previous value for smooth transition (default to 0 on first render)
-  const previousValue = (container as any).__previousScore || 0;
-  (container as any).__previousScore = targetValue;
-
-  const centerTextElement = g.append('text')
-    .attr('class', 'center-score')
-    .attr('text-anchor', 'middle')
-    .attr('dominant-baseline', 'central')
-    .attr('x', 0)
-    .attr('y', 0)
-    .text(previousValue.toFixed(0));
-
-  // Animate the number counting up
-  centerTextElement
-    .transition()
-    .duration(800)
-    .ease(d3.easeCubicOut)
-    .tween('text', function() {
-      const interpolate = d3.interpolateNumber(previousValue, targetValue);
-      return function(t: number) {
-        const currentValue = interpolate(t);
-        d3.select(this).text(Math.round(currentValue).toFixed(0));
-      };
-    });
-}
-
-/**
- * Render the categories list with counts
- */
-function renderCategoriesList(
-  container: HTMLElement,
-  state: ChartState,
-  theme: ThemeContext
-): void {
-  const list = document.createElement('div');
-  list.className = 'categories-list';
-  container.appendChild(list);
-
-  state.categories.forEach(category => {
-    const item = document.createElement('div');
-    item.className = 'category-item';
-
-    // Add selected class if this category is currently selected
-    if (state.selectedCategory === category.value) {
-      item.classList.add('category-selected');
-    }
-
-    item.setAttribute('data-category', category.name);
-
-    // Color indicator
-    const indicator = document.createElement('div');
-    indicator.className = 'category-indicator';
-    indicator.style.backgroundColor = category.color;
-    item.appendChild(indicator);
-
-    // Label and count container
-    const content = document.createElement('div');
-    content.className = 'category-content';
-
-    const label = document.createElement('div');
-    label.className = 'category-label';
-    label.textContent = category.name;
-    content.appendChild(label);
-
-    const count = document.createElement('div');
-    count.className = 'category-count';
-    count.textContent = category.count.toLocaleString();
-    content.appendChild(count);
-
-    item.appendChild(content);
-    list.appendChild(item);
-  });
-}
-
-// ============================================================================
-// INTERACTION HANDLERS
-// ============================================================================
-
-/**
- * Add interaction handlers for filtering
- */
-function addInteractionHandlers(
-  container: HTMLElement,
-  state: ChartState,
-  theme: ThemeContext,
-  width: number,
-  height: number
-): void {
-  // Category item clicks
-  const categoryItems = container.querySelectorAll('.category-item');
-  categoryItems.forEach((item, index) => {
-    item.addEventListener('click', () => {
-      const category = state.categories[index];
-      handleCategoryClick(category, state, container, theme, width, height);
-    });
-  });
-
-  // Donut segment clicks
-  const segments = container.querySelectorAll('.segment path');
-  segments.forEach((segment, index) => {
-    segment.addEventListener('click', () => {
-      const category = state.categories[index];
-      handleCategoryClick(category, state, container, theme, width, height);
-    });
-  });
-}
-
-/**
- * Create filter for selected category
- */
-function createCategoryFilter(
-  categorySlot: Slot | undefined,
-  categoryValue: any
-): ItemFilter[] {
-  if (!categorySlot?.content || categorySlot.content.length === 0) {
-    return [];
-  }
-
-  const column = categorySlot.content[0];
-  return [{
-    expression: '? = ?',
-    parameters: [
-      {
-        column_id: column.columnId,
-        dataset_id: column.datasetId
-      },
-      categoryValue
-    ],
-    properties: {
-      origin: 'filterFromVizItem',
-      type: 'where'
-    }
-  }];
-}
-
-/**
- * Handle category click for filtering and recalculation
- * Filters data to selected category and recalculates center score
- */
-function handleCategoryClick(
-  category: StatusCategory,
-  state: ChartState,
-  container: HTMLElement,
-  theme: ThemeContext,
-  width: number,
-  height: number
-): void {
-  // Toggle selection: if clicking same category, deselect it
-  const clickedValue = category.value!;
-  const wasSelected = state.selectedCategory === clickedValue;
-  const newSelection = wasSelected ? null : clickedValue;
-
-  // Retrieve stored data from container
-  const data = (container as any).__data;
-  const slots = (container as any).__slots;
-  const language = (container as any).__language;
-
-  // Reprocess data with the new selection to recalculate score
-  const newState = processData(data, slots, theme.colors, language, newSelection);
-
-  // Update container's stored state
-  (container as any).__chartState = newState;
-
-  // Re-render the widget with recalculated data
-  renderWidget(container, newState, theme, width, height);
-
-  // Send custom event
-  sendCustomEvent({
-    eventType: 'categorySelected',
-    category: category.name,
-    count: category.count,
-    totalRecords: newState.total,
-    aggregatedScore: newState.aggregatedScore,
-    isFiltered: newState.selectedCategory !== null
-  });
-
-  // Send filter event to dashboard
-  if (newState.selectedCategory) {
-    const filters = createCategoryFilter(newState.categorySlot, clickedValue);
-    sendFilterEvent(filters);
-  } else {
-    sendFilterEvent([]);
-  }
 }
 
 // ============================================================================
 // QUERY BUILDING
 // ============================================================================
 
-/**
- * Build dimension object from slot content
- */
 function buildDimension(column: any): any {
   return {
     dataset_id: column.datasetId || column.set,
@@ -881,41 +1167,18 @@ function buildDimension(column: any): any {
   };
 }
 
-/**
- * Build measure object from slot content
- */
 function buildMeasure(column: any): any {
   const measure: any = {
     dataset_id: column.datasetId || column.set,
     column_id: column.columnId || column.column
   };
 
-  if (column.aggregationFunc && ['sum', 'average', 'min', 'max', 'count'].includes(column.aggregationFunc)) {
-    measure.aggregation = { type: column.aggregationFunc };
-  }
+  // Don't add aggregation for Gantt chart - we want raw values
+  // The manifest already has isAggregationDisabled: true for hour slots
 
   return measure;
 }
 
-/**
- * Build query for data retrieval
- * Uses server-side aggregation for measures
- *
- * Query structure:
- * - Dimension 1: Status Category (e.g., Healthy, Warning, Error) - GROUP BY
- * - Dimension 2 (optional): Order column - for sorting and color assignment
- * - Measure 1: Record count (COUNT aggregation) - for legend counts
- * - Measure 2: Average score (AVERAGE aggregation) - for center KPI
- *
- * Data structure returned:
- *  - With order: [Category, Order, Count, AvgScore]
- *  - Without order: [Category, Count, AvgScore]
- *
- * Display order: uses order column if provided, otherwise: Healthy, Warning, Error
- *
- * User must create a formula column in Luzmo:
- * IF([Score] >= 81, 'Healthy', IF([Score] >= 51, 'Warning', 'Error'))
- */
 export const buildQuery = ({
   slots = [],
   slotConfigurations = []
@@ -923,43 +1186,52 @@ export const buildQuery = ({
   slots: Slot[];
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
-  const categorySlot = slots.find(s => s.name === 'category');
-  const sizeSlot = slots.find(s => s.name === 'size');
-  const measureSlot = slots.find(s => s.name === 'measure');
-  const orderSlot = slots.find(s => s.name === 'order');
-
-  if (!categorySlot?.content || categorySlot.content.length === 0 ||
-      !sizeSlot?.content || sizeSlot.content.length === 0 ||
-      !measureSlot?.content || measureSlot.content.length === 0) {
-    return {
-      dimensions: [],
-      measures: [],
-      order: []
-    };
-  }
-
   const dimensions: any[] = [];
   const measures: any[] = [];
 
-  // Add category column as dimension (GROUP BY)
-  dimensions.push(buildDimension(categorySlot.content[0]));
+  // Only add required dimensions (not all slots)
+  // Required: name, category, time (start), evolution (end)
+  const requiredDimensions = ['name', 'category', 'time', 'evolution'];
 
-  // Add order column as dimension if provided (for sorting and color assignment)
-  if (orderSlot?.content && orderSlot.content.length > 0) {
-    dimensions.push(buildDimension(orderSlot.content[0]));
+  requiredDimensions.forEach(slotName => {
+    const slot = slots.find(s => s.name === slotName);
+    if (slot?.content && slot.content.length > 0) {
+      dimensions.push(buildDimension(slot.content[0]));
+    }
+  });
+
+  // Add optional categorical dimensions only if they have content
+  const optionalDimensions = ['identifier', 'dimension', 'color', 'levels', 'row', 'slidermetric'];
+
+  optionalDimensions.forEach(slotName => {
+    const slot = slots.find(s => s.name === slotName);
+    if (slot?.content && slot.content.length > 0) {
+      dimensions.push(buildDimension(slot.content[0]));
+    }
+  });
+
+  // Add numeric measures only if they have content
+  ['measure', 'columns', 'size'].forEach(slotName => {
+    const slot = slots.find(s => s.name === slotName);
+    if (slot?.content && slot.content.length > 0) {
+      measures.push(buildMeasure(slot.content[0]));
+    }
+  });
+
+  // Only return query if we have at least the required dimensions
+  if (dimensions.length < 4) {
+    return {
+      dimensions: [],
+      measures: [],
+      order: [],
+      limit: { by: 100, offset: 0 }
+    };
   }
-
-  // Add size measure (Measure 1) - for legend counts
-  measures.push(buildMeasure(sizeSlot.content[0]));
-
-  // Add measure column (Measure 2) - for center KPI average score
-  measures.push(buildMeasure(measureSlot.content[0]));
-
-  // Note: Title slot is NOT added to query - we only use the column name from slot metadata
 
   return {
     dimensions,
     measures,
-    order: []
+    order: [],
+    limit: { by: 100, offset: 0 }
   };
 };
