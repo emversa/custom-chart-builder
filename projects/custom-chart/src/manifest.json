@@ -4,12 +4,11 @@
       "name": "name",
       "rotate": false,
       "label": "Project Name",
-      "description": "Add project/task name column (hierarchy type). This will be displayed in the left panel hierarchy.",
+      "description": "Add project/task name column. This will be displayed in the left panel hierarchy.",
       "type": "categorical",
       "order": 1,
       "isRequired": true,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "left"
     },
     {
@@ -21,7 +20,6 @@
       "order": 2,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "left"
     },
     {
@@ -33,7 +31,6 @@
       "order": 3,
       "isRequired": true,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "left"
     },
     {
@@ -45,7 +42,6 @@
       "order": 4,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "left"
     },
     {
@@ -57,7 +53,6 @@
       "order": 5,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "top"
     },
     {
@@ -99,7 +94,6 @@
       "order": 8,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "top-left"
     },
     {
@@ -111,7 +105,6 @@
       "order": 9,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "top"
     },
     {
@@ -123,7 +116,6 @@
       "order": 10,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["hierarchy"],
       "position": "top-right"
     },
     {
