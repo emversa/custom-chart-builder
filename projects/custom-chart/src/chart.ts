@@ -2,10 +2,8 @@
 // IMPORTS AND TYPE DEFINITIONS
 // ============================================================================
 
-import { formatter } from '@luzmo/analytics-components-kit/utils';
 import type {
   ItemData,
-  ItemFilter,
   ItemThemeConfig,
   ItemQuery,
   Slot,
@@ -19,19 +17,18 @@ import * as d3 from 'd3';
 
 interface Project {
   id: string;
-  category: 'organization' | 'epic' | 'story' | 'deal' | string;
+  category: string;
   name: string;
   startDate: Date;
   endDate: Date;
   assignee: string | null;
-  status: 'active' | 'at risk' | 'completed' | 'in planning' | 'pipeline' | string;
+  status: string;
   hoursBilled: number | null;
   hoursEstimated: number | null;
   hoursBudgeted: number | null;
-  colorCode: 'PURPLE' | 'ORANGE' | 'GREEN' | 'GRAY' | string;
-  parentId?: string | null;
+  colorCode: string;
+  parentId: string | null;
   client?: string;
-  rowIndex: number;
   depth: number;
   children?: Project[];
   isExpanded?: boolean;
@@ -39,7 +36,7 @@ interface Project {
 
 interface ChartState {
   projects: Project[];
-  flatProjects: Project[]; // Flattened list for rendering
+  flatProjects: Project[];
   minDate: Date;
   maxDate: Date;
 }
@@ -68,23 +65,32 @@ interface ChartParams {
 const ROW_HEIGHT = 40;
 const LEFT_PANEL_WIDTH = 350;
 const TIMELINE_HEADER_HEIGHT = 60;
-const BAR_HEIGHT = 32; // Slightly smaller than row height for spacing
-const BAR_VERTICAL_PADDING = 4; // Padding above and below each bar
+const BAR_HEIGHT = 32;
+const BAR_VERTICAL_PADDING = 4;
 const PADDING = 16;
+const MIN_BAR_WIDTH_FOR_LABELS = 120;
+const MIN_BAR_WIDTH_FOR_INITIALS = 60;
 
 const COLOR_MAP: Record<string, string> = {
-  'PURPLE': '#A78BFA',
-  'ORANGE': '#FB923C',
-  'GREEN': '#4ADE80',
-  'GRAY': '#94A3B8'
+  PURPLE: '#A78BFA',
+  ORANGE: '#FB923C',
+  GREEN: '#4ADE80',
+  GRAY: '#94A3B8'
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  'active': '#4ADE80',
+  active: '#4ADE80',
   'at risk': '#FB923C',
-  'completed': '#60A5FA',
+  completed: '#60A5FA',
   'in planning': '#94A3B8',
-  'pipeline': '#94A3B8'
+  pipeline: '#94A3B8'
+};
+
+const CATEGORY_DEPTH: Record<string, number> = {
+  organization: 0,
+  epic: 1,
+  story: 2,
+  deal: 1
 };
 
 // ============================================================================
@@ -92,42 +98,34 @@ const STATUS_COLORS: Record<string, string> = {
 // ============================================================================
 
 function extractValue(obj: any, type: 'string' | 'number' | 'date'): any {
-  if (obj === null || obj === undefined) {
-    if (type === 'number') return null;
-    if (type === 'date') return null;
-    return null;
-  }
+  if (obj === null || obj === undefined) return null;
 
-  if (type === 'date') {
-    if (obj instanceof Date) return obj;
-    if (typeof obj === 'string' || typeof obj === 'number') {
-      const date = new Date(obj);
+  switch (type) {
+    case 'date': {
+      if (obj instanceof Date) return obj;
+      const date = new Date(typeof obj === 'object' && 'id' in obj ? obj.id : obj);
       return isNaN(date.getTime()) ? null : date;
     }
-    if (typeof obj === 'object' && 'id' in obj) {
-      const date = new Date(obj.id);
-      return isNaN(date.getTime()) ? null : date;
-    }
-    return null;
-  }
 
-  if (type === 'number') {
-    if (typeof obj === 'number') return obj;
-    if (typeof obj === 'object' && 'id' in obj) return Number(obj.id);
-    return Number(obj);
-  }
-
-  // string
-  if (typeof obj === 'string') return obj;
-  if (typeof obj === 'object' && 'name' in obj) {
-    const nameObj = obj.name;
-    if (typeof nameObj === 'object' && nameObj !== null) {
-      return String(nameObj.en ?? Object.values(nameObj)[0] ?? obj.id ?? 'Unknown');
+    case 'number': {
+      if (typeof obj === 'number') return obj;
+      if (typeof obj === 'object' && 'id' in obj) return Number(obj.id);
+      return Number(obj);
     }
-    return String(nameObj ?? obj.id ?? 'Unknown');
+
+    case 'string': {
+      if (typeof obj === 'string') return obj;
+      if (typeof obj === 'object' && 'name' in obj) {
+        const nameObj = obj.name;
+        if (typeof nameObj === 'object' && nameObj !== null) {
+          return String(nameObj.en ?? Object.values(nameObj)[0] ?? obj.id ?? 'Unknown');
+        }
+        return String(nameObj ?? obj.id ?? 'Unknown');
+      }
+      if (typeof obj === 'object' && 'id' in obj) return String(obj.id);
+      return String(obj);
+    }
   }
-  if (typeof obj === 'object' && 'id' in obj) return String(obj.id);
-  return String(obj);
 }
 
 function getInitials(fullName: string | null): string | null {
@@ -144,15 +142,12 @@ function getInitials(fullName: string | null): string | null {
     .substring(0, 2);
 }
 
-function formatHoursDisplay(
-  billed: number | null,
-  estimated: number | null,
-  budgeted: number | null
-): string {
-  const b = billed !== null ? billed.toFixed(1) : '—';
-  const e = estimated !== null ? estimated.toFixed(1) : '—';
-  const bu = budgeted !== null ? budgeted.toFixed(1) : '—';
-  return `${b}/${e}/${bu}`;
+function formatHours(hours: number | null): string {
+  return hours !== null ? hours.toFixed(1) : '—';
+}
+
+function formatHoursDisplay(billed: number | null, estimated: number | null, budgeted: number | null): string {
+  return `${formatHours(billed)}/${formatHours(estimated)}/${formatHours(budgeted)}`;
 }
 
 function calculateProgress(billed: number | null, budgeted: number | null): number {
@@ -257,11 +252,7 @@ function processData(
       const projectId = 'projectId' in columnMapping ? extractValue(row[columnMapping['projectId']], 'string') : `project-${index}`;
       const client = 'client' in columnMapping ? extractValue(row[columnMapping['client']], 'string') : undefined;
 
-      if (!startDate || !endDate) {
-        return;
-      }
-
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         return;
       }
 
@@ -279,11 +270,10 @@ function processData(
         colorCode: colorCode || 'PURPLE',
         parentId: parentId && parentId !== 'null' && parentId !== '' ? parentId : null,
         client,
-        rowIndex: index,
         depth: getCategoryDepth(category)
       });
 
-      if (index === 0 || projects.length === 1) {
+      if (projects.length === 1) {
         minDate = new Date(startDate);
         maxDate = new Date(endDate);
       } else {
@@ -293,7 +283,6 @@ function processData(
     });
   }
 
-  // Fallback sample data for demonstration
   if (projects.length === 0) {
     const sampleProjects: Project[] = [
       {
@@ -310,7 +299,6 @@ function processData(
         parentId: null,
         client: 'Client A',
         colorCode: 'PURPLE',
-        rowIndex: 0,
         depth: 0
       },
       {
@@ -327,7 +315,6 @@ function processData(
         parentId: 'ORG_CLIENT_A',
         client: 'Client A',
         colorCode: 'ORANGE',
-        rowIndex: 1,
         depth: 1
       },
       {
@@ -344,7 +331,6 @@ function processData(
         parentId: 'ORG_CLIENT_A',
         client: 'Client A',
         colorCode: 'ORANGE',
-        rowIndex: 2,
         depth: 1
       },
       {
@@ -361,7 +347,6 @@ function processData(
         parentId: null,
         client: 'Client B',
         colorCode: 'PURPLE',
-        rowIndex: 3,
         depth: 0
       },
       {
@@ -378,7 +363,6 @@ function processData(
         parentId: null,
         client: 'Client C',
         colorCode: 'PURPLE',
-        rowIndex: 4,
         depth: 0
       },
       {
@@ -395,7 +379,6 @@ function processData(
         parentId: 'ORG_CLIENT_C',
         client: 'Client C',
         colorCode: 'ORANGE',
-        rowIndex: 5,
         depth: 1
       },
       {
@@ -412,7 +395,6 @@ function processData(
         parentId: 'EPIC_API_PLATFORM',
         client: 'Client C',
         colorCode: 'GREEN',
-        rowIndex: 6,
         depth: 2
       },
       {
@@ -429,7 +411,6 @@ function processData(
         parentId: 'EPIC_API_PLATFORM',
         client: 'Client C',
         colorCode: 'PURPLE',
-        rowIndex: 7,
         depth: 2
       },
       {
@@ -446,7 +427,6 @@ function processData(
         parentId: 'ORG_CLIENT_C',
         client: 'Client C',
         colorCode: 'ORANGE',
-        rowIndex: 8,
         depth: 1
       },
       {
@@ -463,7 +443,6 @@ function processData(
         parentId: 'ORG_CLIENT_A',
         client: 'Client A',
         colorCode: 'GRAY',
-        rowIndex: 9,
         depth: 1
       }
     ];
@@ -493,38 +472,28 @@ function processData(
 }
 
 function getCategoryDepth(category: string): number {
-  const depthMap: Record<string, number> = {
-    'organization': 0,
-    'epic': 1,
-    'story': 2,
-    'deal': 1
-  };
-  return depthMap[category.toLowerCase()] || 0;
+  return CATEGORY_DEPTH[category.toLowerCase()] ?? 0;
 }
 
-/**
- * Build hierarchy from flat list of projects using parentId relationships
- */
 function buildHierarchy(projects: Project[]): Project[] {
-  // Create a map for quick lookup
   const projectMap = new Map<string, Project>();
+
   projects.forEach(p => {
     projectMap.set(p.id, { ...p, children: [], isExpanded: true });
   });
 
   const roots: Project[] = [];
 
-  // Build parent-child relationships
   projects.forEach(project => {
     const node = projectMap.get(project.id)!;
+
     if (!project.parentId) {
       roots.push(node);
     } else {
       const parent = projectMap.get(project.parentId);
-      if (parent && parent.children) {
+      if (parent?.children) {
         parent.children.push(node);
       } else {
-        // If parent not found, treat as root
         roots.push(node);
       }
     }
@@ -533,17 +502,13 @@ function buildHierarchy(projects: Project[]): Project[] {
   return roots;
 }
 
-/**
- * Flatten hierarchy tree for rendering, calculating depths
- */
 function flattenHierarchy(projects: Project[], depth: number = 0): Project[] {
   const result: Project[] = [];
 
   projects.forEach(project => {
-    const flatProject = { ...project, depth };
-    result.push(flatProject);
+    result.push({ ...project, depth });
 
-    if (project.isExpanded && project.children && project.children.length > 0) {
+    if (project.isExpanded && project.children?.length) {
       result.push(...flattenHierarchy(project.children, depth + 1));
     }
   });
@@ -801,9 +766,7 @@ function renderProjectRows(
   xScale: d3.ScaleTime<number, number>,
   theme: ThemeContext
 ): void {
-  // Use flatProjects for rendering
   const projectsToRender = state.flatProjects || state.projects;
-
 
   // Render left panel rows
   projectsToRender.forEach((project, index) => {
@@ -877,7 +840,6 @@ function renderProjectRows(
     leftPanel.appendChild(row);
   });
 
-
   // Render grid lines FIRST (so they appear behind bars)
   const [minDate, maxDate] = xScale.domain();
   let weekDate = new Date(minDate);
@@ -899,9 +861,6 @@ function renderProjectRows(
   }
 
   // Render timeline bars
-  const barsRendered: string[] = [];
-  const barsSkipped: string[] = [];
-
   projectsToRender.forEach((project, index) => {
     const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
 
@@ -912,16 +871,7 @@ function renderProjectRows(
     const x1 = xScale(project.startDate);
     const x2 = xScale(project.endDate);
     const barWidth = Math.max(x2 - x1, 20);
-
-    // Track rendering
-    const isOffScreen = x1 < 0 || x2 < 0 || x1 > xScale.range()[1] || x2 > xScale.range()[1];
-    if (isOffScreen) {
-      barsSkipped.push(project.name);
-    } else {
-      barsRendered.push(project.name);
-    }
-
-    const barColor = COLOR_MAP[project.colorCode] || COLOR_MAP['PURPLE'];
+    const barColor = COLOR_MAP[project.colorCode] || COLOR_MAP.PURPLE;
 
     // Background bar
     barGroup.append('rect')
@@ -946,15 +896,13 @@ function renderProjectRows(
     }
 
     // Calculate available space and determine what to show
-    const minBarWidthForLabels = 120;
-    const minBarWidthForInitials = 60;
-    const showLabels = barWidth >= minBarWidthForLabels;
-    const showInitials = barWidth >= minBarWidthForInitials;
+    const showLabels = barWidth >= MIN_BAR_WIDTH_FOR_LABELS;
+    const showInitials = barWidth >= MIN_BAR_WIDTH_FOR_INITIALS;
 
-    let currentX = x1 + 8; // Start position for content
+    let currentX = x1 + 8;
 
-    // Status indicator (modern badge style)
-    const statusColor = STATUS_COLORS[project.status.toLowerCase()] || STATUS_COLORS['active'];
+    // Status indicator
+    const statusColor = STATUS_COLORS[project.status.toLowerCase()] || STATUS_COLORS.active;
     if (showLabels || showInitials) {
       barGroup.append('circle')
         .attr('cx', currentX + 5)
@@ -996,17 +944,15 @@ function renderProjectRows(
       currentX += pillWidth + 8;
     }
 
-    // Hours display (modern glass badge style)
-    const hoursText = formatHoursDisplay(project.hoursBilled, project.hoursEstimated, project.hoursBudgeted);
+    // Hours display
     if (project.hoursBudgeted !== null && showLabels) {
+      const hoursText = formatHoursDisplay(project.hoursBilled, project.hoursEstimated, project.hoursBudgeted);
       const badgePadding = 6;
       const badgeTextWidth = hoursText.length * 6;
       const badgeWidth = badgeTextWidth + badgePadding * 2;
       const badgeHeight = 18;
 
-      // Only show if there's enough space remaining in the bar
       if (currentX + badgeWidth < x1 + barWidth - 8) {
-        // Subtle glass badge background
         barGroup.append('rect')
           .attr('x', currentX)
           .attr('y', BAR_HEIGHT / 2 - badgeHeight / 2)
@@ -1039,9 +985,7 @@ function renderProjectRows(
       const percentBadgeHeight = 20;
       const percentX = x2 - percentBadgeWidth - 6;
 
-      // Only show if there's space
       if (percentX > x1 + 50) {
-        // Subtle percentage badge
         barGroup.append('rect')
           .attr('x', percentX)
           .attr('y', BAR_HEIGHT / 2 - percentBadgeHeight / 2)
@@ -1062,7 +1006,7 @@ function renderProjectRows(
       }
     }
 
-    // End date label (outside bar on the right)
+    // End date label
     const dateFormat = d3.timeFormat('%b %d');
     barGroup.append('text')
       .attr('x', x2 + 8)
@@ -1073,7 +1017,8 @@ function renderProjectRows(
       .attr('opacity', 0.6)
       .text(dateFormat(project.endDate));
 
-    // Add tooltip on hover using a foreignObject for better HTML tooltips
+    // Tooltip
+    const hoursDisplayText = formatHoursDisplay(project.hoursBilled, project.hoursEstimated, project.hoursBudgeted);
     barGroup
       .on('mouseenter', function(event) {
         // Create tooltip
@@ -1090,15 +1035,17 @@ function renderProjectRows(
           .style('z-index', '1000')
           .style('box-shadow', '0 4px 12px rgba(0, 0, 0, 0.3)');
 
-        let tooltipHTML = `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${project.name}</div>`;
-        if (project.client) tooltipHTML += `<div><strong>Client:</strong> ${project.client}</div>`;
-        tooltipHTML += `<div><strong>Category:</strong> ${project.category}</div>`;
-        tooltipHTML += `<div><strong>Status:</strong> ${project.status}</div>`;
-        tooltipHTML += `<div><strong>Assignee:</strong> ${project.assignee || 'Unassigned'}</div>`;
-        tooltipHTML += `<div><strong>Hours:</strong> ${hoursText}</div>`;
-        tooltipHTML += `<div><strong>Duration:</strong> ${dateFormat(project.startDate)} - ${dateFormat(project.endDate)}</div>`;
+        const tooltipContent = [
+          `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${project.name}</div>`,
+          project.client ? `<div><strong>Client:</strong> ${project.client}</div>` : null,
+          `<div><strong>Category:</strong> ${project.category}</div>`,
+          `<div><strong>Status:</strong> ${project.status}</div>`,
+          `<div><strong>Assignee:</strong> ${project.assignee || 'Unassigned'}</div>`,
+          `<div><strong>Hours:</strong> ${hoursDisplayText}</div>`,
+          `<div><strong>Duration:</strong> ${dateFormat(project.startDate)} - ${dateFormat(project.endDate)}</div>`
+        ].filter(Boolean).join('');
 
-        tooltip.html(tooltipHTML);
+        tooltip.html(tooltipContent);
 
         // Position tooltip
         const [mouseX, mouseY] = d3.pointer(event, timelineBody);
@@ -1118,17 +1065,13 @@ function renderProjectRows(
       });
   });
 
-
-  // Synchronize scroll between left panel and timeline body
-  const leftPanelContainer = leftPanel;
-  const timelineBodyContainer = timelineBody;
-
-  leftPanelContainer.addEventListener('scroll', () => {
-    timelineBodyContainer.scrollTop = leftPanelContainer.scrollTop;
+  // Synchronize scroll
+  leftPanel.addEventListener('scroll', () => {
+    timelineBody.scrollTop = leftPanel.scrollTop;
   });
 
-  timelineBodyContainer.addEventListener('scroll', () => {
-    leftPanelContainer.scrollTop = timelineBodyContainer.scrollTop;
+  timelineBody.addEventListener('scroll', () => {
+    leftPanel.scrollTop = timelineBody.scrollTop;
   });
 }
 
