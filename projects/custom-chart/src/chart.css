@@ -219,6 +219,13 @@
 .timeline-header {
   flex-shrink: 0;
   border-bottom: 2px solid #E2E8F0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+}
+
+.timeline-header::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
 }
 
 .gantt-dark .timeline-header {
@@ -232,7 +239,7 @@
 .timeline-body {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .timeline-svg {

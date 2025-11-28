@@ -459,10 +459,24 @@ function processData(
     maxDate = new Date('2025-02-01');
   }
 
-  // Add padding to date range
-  const paddingDays = 7;
-  minDate = new Date(minDate.getTime() - paddingDays * 24 * 60 * 60 * 1000);
-  maxDate = new Date(maxDate.getTime() + paddingDays * 24 * 60 * 60 * 1000);
+  // Add 2 weeks padding and align to week boundaries
+  // First, subtract 2 weeks from minDate
+  const minWithPadding = new Date(minDate);
+  minWithPadding.setDate(minWithPadding.getDate() - 14);
+
+  // Find the start of the week (Sunday) for minDate
+  const dayOfWeek = minWithPadding.getDay();
+  minDate = new Date(minWithPadding);
+  minDate.setDate(minDate.getDate() - dayOfWeek);
+
+  // Add 2 weeks to maxDate
+  const maxWithPadding = new Date(maxDate);
+  maxWithPadding.setDate(maxWithPadding.getDate() + 14);
+
+  // Find the end of the week (Saturday) for maxDate
+  const daysUntilSaturday = 6 - maxWithPadding.getDay();
+  maxDate = new Date(maxWithPadding);
+  maxDate.setDate(maxDate.getDate() + daysUntilSaturday);
 
   // Build hierarchy from flat list
   const hierarchy = buildHierarchy(projects);
@@ -660,21 +674,31 @@ function renderTimeline(
   const projectCount = state.flatProjects ? state.flatProjects.length : state.projects.length;
   const svgHeight = projectCount * ROW_HEIGHT;
 
+  // Calculate the full timeline width
+  // Use pixels per day to determine width - 4 months = ~120 days visible in viewport
+  const PIXELS_PER_DAY = width / 120; // Adjust this to control zoom level
+  const totalDays = Math.ceil((state.maxDate.getTime() - state.minDate.getTime()) / (1000 * 60 * 60 * 24));
+  const svgWidth = totalDays * PIXELS_PER_DAY;
 
   // Create SVG for timeline
   const svg = d3.select(timelineBody)
     .append('svg')
-    .attr('width', width)
+    .attr('width', svgWidth)
     .attr('height', svgHeight)
     .attr('class', 'timeline-svg');
 
-  // Create time scale
+  // Create time scale spanning the full width
   const xScale = d3.scaleTime()
     .domain([state.minDate, state.maxDate])
-    .range([0, width]);
+    .range([0, svgWidth]);
 
   // Render timeline header with months and weeks
-  renderTimelineHeader(timelineHeader, xScale, width, theme);
+  renderTimelineHeader(timelineHeader, xScale, svgWidth, theme);
+
+  // Synchronize scroll between header and body
+  timelineBody.addEventListener('scroll', () => {
+    timelineHeader.scrollLeft = timelineBody.scrollLeft;
+  });
 
   // Render project rows
   renderProjectRows(leftPanel, timelineBody, svg, state, xScale, theme);
