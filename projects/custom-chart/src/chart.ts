@@ -29,6 +29,7 @@ interface Project {
   colorCode: string;
   parentId: string | null;
   client?: string;
+  link?: string;
   depth: number;
   children?: Project[];
   isExpanded?: boolean;
@@ -218,6 +219,7 @@ function processData(
   const parentIdSlot = slots.find(s => s.name === 'levels');
   const projectIdSlot = slots.find(s => s.name === 'row');
   const clientSlot = slots.find(s => s.name === 'slidermetric');
+  const linkSlot = slots.find(s => s.name === 'destination');
 
   const projects: Project[] = [];
   let minDate = new Date();
@@ -228,15 +230,20 @@ function processData(
     const columnMapping: { [key: string]: number } = {};
     let currentIndex = 0;
 
+    // IMPORTANT: This order MUST match the buildQuery function's dimension order
+    // Required dimensions first (matching buildQuery)
     if (nameSlot?.content?.[0]) columnMapping['name'] = currentIndex++;
     if (categorySlot?.content?.[0]) columnMapping['category'] = currentIndex++;
     if (startDateSlot?.content?.[0]) columnMapping['startDate'] = currentIndex++;
     if (endDateSlot?.content?.[0]) columnMapping['endDate'] = currentIndex++;
+
+    // Optional dimensions (matching buildQuery order: row, destination, identifier, dimension, color, levels, slidermetric)
+    if (projectIdSlot?.content?.[0]) columnMapping['projectId'] = currentIndex++;
+    if (linkSlot?.content?.[0]) columnMapping['link'] = currentIndex++;
     if (statusSlot?.content?.[0]) columnMapping['status'] = currentIndex++;
     if (assigneeSlot?.content?.[0]) columnMapping['assignee'] = currentIndex++;
     if (colorCodeSlot?.content?.[0]) columnMapping['colorCode'] = currentIndex++;
     if (parentIdSlot?.content?.[0]) columnMapping['parentId'] = currentIndex++;
-    if (projectIdSlot?.content?.[0]) columnMapping['projectId'] = currentIndex++;
     if (clientSlot?.content?.[0]) columnMapping['client'] = currentIndex++;
 
     // Measures come after dimensions
@@ -258,6 +265,7 @@ function processData(
       const parentId = 'parentId' in columnMapping ? extractValue(row[columnMapping['parentId']], 'string') : null;
       const projectId = 'projectId' in columnMapping ? extractValue(row[columnMapping['projectId']], 'string') : `project-${index}`;
       const client = 'client' in columnMapping ? extractValue(row[columnMapping['client']], 'string') : undefined;
+      const link = 'link' in columnMapping ? extractValue(row[columnMapping['link']], 'string') : undefined;
 
       if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         return;
@@ -277,6 +285,7 @@ function processData(
         colorCode: colorCode || 'PURPLE',
         parentId: parentId && parentId !== 'null' && parentId !== '' ? parentId : null,
         client,
+        link,
         depth: getCategoryDepth(category)
       });
 
@@ -897,9 +906,23 @@ function renderProjectRows(
   projectsToRender.forEach((project, index) => {
     const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
 
-    const barGroup = svg.append('g')
-      .attr('class', 'bar-group')
-      .attr('transform', `translate(0, ${yPosition})`);
+    // Create wrapper - either an SVG <a> element (if link exists) or a <g> element
+    let barGroup;
+    if (project.link) {
+      barGroup = svg.append('a')
+        .attr('href', project.link)
+        .attr('target', '_blank')
+        .attr('rel', 'noopener noreferrer')
+        .append('g')
+        .attr('class', 'bar-group')
+        .attr('transform', `translate(0, ${yPosition})`)
+        .style('cursor', 'pointer');
+    } else {
+      barGroup = svg.append('g')
+        .attr('class', 'bar-group')
+        .attr('transform', `translate(0, ${yPosition})`)
+        .style('cursor', 'default');
+    }
 
     const x1 = xScale(project.startDate);
     const x2 = xScale(project.endDate);
@@ -1177,7 +1200,7 @@ export const buildQuery = ({
   });
 
   // Add optional categorical dimensions only if they have content
-  const optionalDimensions = ['identifier', 'dimension', 'color', 'levels', 'row', 'slidermetric'];
+  const optionalDimensions = ['row', 'destination', 'identifier', 'dimension', 'color', 'levels', 'slidermetric'];
 
   optionalDimensions.forEach(slotName => {
     const slot = slots.find(s => s.name === slotName);
