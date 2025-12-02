@@ -1,6 +1,5 @@
 function configureIframe(iframe: HTMLIFrameElement): void {
-  iframe.setAttribute('sandbox', 'allow-scripts');
-  iframe.setAttribute('src', 'about:blank');
+  iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-top-navigation-by-user-activation');
   iframe.setAttribute('title', 'Custom Chart View');
   iframe.setAttribute('loading', 'lazy');
 

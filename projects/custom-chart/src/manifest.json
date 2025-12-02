@@ -1,37 +1,26 @@
 {
   "slots": [
     {
-      "name": "name",
-      "label": "Project Name",
-      "description": "Add project/task name column. This will be displayed in the left panel hierarchy.",
-      "type": "categorical",
-      "acceptableColumnTypes": ["hierarchy"],
-      "order": 1,
-      "isRequired": true,
-      "canAcceptMultipleColumns": false,
-      "position": "top-left"
-    },
-    {
       "name": "row",
       "label": "Project ID",
       "description": "Add unique project ID column. Used to identify projects and build hierarchy relationships.",
       "type": "categorical",
       "acceptableColumnTypes": ["hierarchy"],
-      "order": 2,
+      "order": 1,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
-      "position": "top"
+      "position": "top-left"
     },
     {
-      "name": "destination",
-      "label": "Link",
-      "description": "Add URL column. When bar is clicked, opens link in new browser tab.",
+      "name": "name",
+      "label": "Project Name",
+      "description": "Add project/task name column. This will be displayed in the left panel hierarchy.",
       "type": "categorical",
       "acceptableColumnTypes": ["hierarchy"],
-      "order": 3,
-      "isRequired": false,
+      "order": 2,
+      "isRequired": true,
       "canAcceptMultipleColumns": false,
-      "position": "top-right"
+      "position": "top"
     },
     {
       "name": "category",
@@ -39,90 +28,29 @@
       "description": "Add category column (organization, epic, story, deal). Used to determine hierarchy level and visual styling.",
       "type": "categorical",
       "acceptableColumnTypes": ["hierarchy"],
-      "order": 4,
+      "order": 3,
       "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "position": "top-right"
+    },
+    {
+      "name": "color",
+      "label": "Color Code Code",
+      "description": "Add color code column (PURPLE, ORANGE, GREEN, GRAY). Determines timeline bar color.",
+      "type": "categorical",
+      "acceptableColumnTypes": ["hierarchy"],
+      "order": 4,
+      "isRequired": false,
       "canAcceptMultipleColumns": false,
       "position": "left"
     },
     {
-      "name": "levels",
-      "label": "Parent ID",
-      "description": "Add parent ID column to define hierarchy relationships. References another project's ID to create parent-child structure. Leave null for top-level items.",
+      "name": "destination",
+      "label": "Link",
+      "description": "Add URL column. When bar is clicked, opens link in new browser tab.",
       "type": "categorical",
       "acceptableColumnTypes": ["hierarchy"],
       "order": 5,
-      "isRequired": false,
-      "canAcceptMultipleColumns": false,
-      "position": "right"
-    },
-    {
-      "name": "slidermetric",
-      "label": "Client",
-      "description": "Add client name column. Displayed on organization-level items in the left panel.",
-      "type": "categorical",
-      "acceptableColumnTypes": ["hierarchy"],
-      "order": 6,
-      "isRequired": false,
-      "canAcceptMultipleColumns": false,
-      "position": "bottom-left"
-    },
-    {
-      "name": "time",
-      "label": "Start Date",
-      "description": "Add start date column for timeline positioning. Must be datetime type.",
-      "type": "categorical",
-      "order": 7,
-      "isRequired": true,
-      "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["datetime"],
-      "options": {
-        "areDatetimeOptionsEnabled": true
-      },
-      "position": "bottom"
-    },
-    {
-      "name": "evolution",
-      "label": "End Date",
-      "description": "Add end date column for timeline bar length. Must be datetime type.",
-      "type": "categorical",
-      "order": 8,
-      "isRequired": true,
-      "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["datetime"],
-      "options": {
-        "areDatetimeOptionsEnabled": true
-      },
-      "position": "bottom-right"
-    },
-    {
-      "name": "identifier",
-      "label": "Status",
-      "description": "Add status column (active, at risk, completed, in planning, pipeline). Displayed as colored circle on timeline bars.",
-      "type": "categorical",
-      "acceptableColumnTypes": ["hierarchy"],
-      "order": 9,
-      "isRequired": false,
-      "canAcceptMultipleColumns": false,
-      "position": "top-left"
-    },
-    {
-      "name": "dimension",
-      "label": "Assignee",
-      "description": "Add assignee name column. Displayed as initials in glass pill badge on timeline bars.",
-      "type": "categorical",
-      "acceptableColumnTypes": ["hierarchy"],
-      "order": 10,
-      "isRequired": false,
-      "canAcceptMultipleColumns": false,
-      "position": "top"
-    },
-    {
-      "name": "color",
-      "label": "Color Code",
-      "description": "Add color code column (PURPLE, ORANGE, GREEN, GRAY). Determines timeline bar color.",
-      "type": "categorical",
-      "acceptableColumnTypes": ["hierarchy"],
-      "order": 11,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
       "position": "top-right"
@@ -132,35 +60,7 @@
       "label": "Hours Billed",
       "description": "Add hours billed column (numeric). Used to calculate progress percentage and display on bars.",
       "type": "numeric",
-      "order": 12,
-      "isRequired": false,
-      "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["numeric"],
-      "options": {
-        "isAggregationDisabled": true
-      },
-      "position": "left"
-    },
-    {
-      "name": "columns",
-      "label": "Hours Estimated",
-      "description": "Add hours estimated column (numeric). Displayed in hours badge on timeline bars.",
-      "type": "numeric",
-      "order": 13,
-      "isRequired": false,
-      "canAcceptMultipleColumns": false,
-      "acceptableColumnTypes": ["numeric"],
-      "options": {
-        "isAggregationDisabled": true
-      },
-      "position": "right"
-    },
-    {
-      "name": "size",
-      "label": "Hours Budgeted",
-      "description": "Add hours budgeted column (numeric). Used to calculate progress percentage and two-shade bar visualization.",
-      "type": "numeric",
-      "order": 14,
+      "order": 6,
       "isRequired": false,
       "canAcceptMultipleColumns": false,
       "acceptableColumnTypes": ["numeric"],
@@ -168,6 +68,106 @@
         "isAggregationDisabled": true
       },
       "position": "bottom-left"
+    },
+    {
+      "name": "slidermetric",
+      "label": "Client",
+      "description": "Add client name column. Displayed on organization-level items in the left panel.",
+      "type": "categorical",
+      "acceptableColumnTypes": ["hierarchy"],
+      "order": 7,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "position": "bottom-left"
+    },
+    {
+      "name": "time",
+      "label": "Start Date",
+      "description": "Add start date column for timeline positioning. Must be datetime type.",
+      "type": "categorical",
+      "order": 8,
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["datetime"],
+      "options": {
+        "areDatetimeOptionsEnabled": true
+      },
+      "position": "bottom"
+    },
+    {
+      "name": "columns",
+      "label": "Hours Estimated",
+      "description": "Add hours estimated column (numeric). Displayed in hours badge on timeline bars.",
+      "type": "numeric",
+      "order": 9,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["numeric"],
+      "options": {
+        "isAggregationDisabled": true
+      },
+      "position": "bottom"
+    },
+    {
+      "name": "evolution",
+      "label": "End Date Date",
+      "description": "Add end date column for timeline bar length. Must be datetime type.",
+      "type": "categorical",
+      "order": 10,
+      "isRequired": true,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["datetime"],
+      "options": {
+        "areDatetimeOptionsEnabled": true
+      },
+      "position": "bottom-right"
+    },
+    {
+      "name": "size",
+      "label": "Hours Budgeted",
+      "description": "Add hours budgeted column (numeric). Used to calculate progress percentage and two-shade bar visualization.",
+      "type": "numeric",
+      "order": 11,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "acceptableColumnTypes": ["numeric"],
+      "options": {
+        "isAggregationDisabled": true
+      },
+      "position": "middle"
+    },
+    {
+      "name": "levels",
+      "label": "Parent ID",
+      "description": "Add parent ID column to define hierarchy relationships. References another project's ID to create parent-child structure. Leave null for top-level items.",
+      "type": "categorical",
+      "acceptableColumnTypes": ["hierarchy"],
+      "order": 12,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "position": "left"
+    },
+    {
+      "name": "identifier",
+      "label": "Status",
+      "description": "Add status column (active, at risk, completed, in planning, pipeline). Displayed as colored circle on timeline bars.",
+      "type": "categorical",
+      "acceptableColumnTypes": ["hierarchy"],
+      "order": 13,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "position": "bottom-right"
+    },
+    {
+      "name": "dimension",
+      "label": "Assignee",
+      "description": "Add assignee name column. Displayed as initials in glass pill badge on timeline bars.",
+      "type": "categorical",
+      "acceptableColumnTypes": ["hierarchy"],
+      "order": 14,
+      "isRequired": false,
+      "canAcceptMultipleColumns": false,
+      "position": "right"
     }
   ]
 }

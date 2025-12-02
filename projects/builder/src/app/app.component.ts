@@ -713,6 +713,11 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewChecked {
       case 'moduleError':
         console.error('Module error:', event.data.error);
         break;
+      case 'openLink':
+        if (event.data.url) {
+          window.open(event.data.url, '_blank', 'noopener,noreferrer');
+        }
+        break;
     }
   };
 

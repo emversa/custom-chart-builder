@@ -547,6 +547,39 @@ function flattenHierarchy(projects: Project[], depth: number = 0): Project[] {
 }
 
 // ============================================================================
+// EXPAND/COLLAPSE STATE MANAGEMENT
+// ============================================================================
+
+// Store expanded state by project ID (persists across re-renders)
+const expandedState = new Map<string, boolean>();
+
+function toggleExpanded(projectId: string): void {
+  const current = expandedState.get(projectId);
+  expandedState.set(projectId, current === undefined ? false : !current);
+}
+
+function isExpanded(projectId: string): boolean {
+  const state = expandedState.get(projectId);
+  return state === undefined ? true : state; // Default to expanded
+}
+
+function updateFlatProjects(state: ChartState): void {
+  // Update isExpanded on all projects based on stored state
+  const updateExpanded = (projects: Project[]) => {
+    projects.forEach(p => {
+      p.isExpanded = isExpanded(p.id);
+      if (p.children?.length) {
+        updateExpanded(p.children);
+      }
+    });
+  };
+  updateExpanded(state.projects);
+
+  // Re-flatten the hierarchy
+  state.flatProjects = flattenHierarchy(state.projects);
+}
+
+// ============================================================================
 // MAIN RENDER FUNCTION
 // ============================================================================
 
@@ -562,9 +595,13 @@ export const render = ({
   const theme = resolveTheme(options.theme);
   const state = processData(data, slots, language);
 
+  // Apply stored expanded state
+  updateFlatProjects(state);
+
   // Store state for resize
   (container as any).__chartState = state;
   (container as any).__theme = theme;
+  (container as any).__dimensions = { width, height };
 
   renderGanttChart(container, state, theme, width, height);
 };
@@ -657,17 +694,22 @@ function renderGanttChart(
   const timelineWidth = width - LEFT_PANEL_WIDTH - PADDING * 2;
   const timelineHeight = height - TIMELINE_HEADER_HEIGHT - PADDING * 2;
 
-  renderTimeline(rightPanel, leftPanelBody, state, theme, timelineWidth, timelineHeight);
+  renderTimeline(container, rightPanel, leftPanelBody, state, theme, timelineWidth, timelineHeight, width, height);
 }
 
 function renderTimeline(
+  container: HTMLElement,
   rightPanel: HTMLElement,
   leftPanel: HTMLElement,
   state: ChartState,
   theme: ThemeContext,
-  width: number,
-  height: number
+  timelineWidth: number,
+  timelineHeight: number,
+  fullWidth: number,
+  fullHeight: number
 ): void {
+  const width = timelineWidth;
+  const height = timelineHeight;
   // Create timeline header
   const timelineHeader = document.createElement('div');
   timelineHeader.className = 'timeline-header';
@@ -709,8 +751,8 @@ function renderTimeline(
     timelineHeader.scrollLeft = timelineBody.scrollLeft;
   });
 
-  // Render project rows
-  renderProjectRows(leftPanel, timelineBody, svg, state, xScale, theme);
+  // Render project rows (pass container for re-render on expand/collapse)
+  renderProjectRows(container, leftPanel, timelineBody, svg, state, xScale, theme, fullWidth, fullHeight);
 }
 
 function renderTimelineHeader(
@@ -801,12 +843,15 @@ function renderTimelineHeader(
 }
 
 function renderProjectRows(
+  container: HTMLElement,
   leftPanel: HTMLElement,
   timelineBody: HTMLElement,
   svg: d3.Selection<SVGSVGElement, unknown, HTMLElement, any>,
   state: ChartState,
   xScale: d3.ScaleTime<number, number>,
-  theme: ThemeContext
+  theme: ThemeContext,
+  width: number,
+  height: number
 ): void {
   const projectsToRender = state.flatProjects || state.projects;
 
@@ -842,6 +887,16 @@ function renderProjectRows(
       expandIcon.style.left = `${project.depth * 20 - 8}px`;
       expandIcon.style.top = '50%';
       expandIcon.style.transform = 'translateY(-50%)';
+
+      // Add click handler for expand/collapse
+      expandIcon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleExpanded(project.id);
+        updateFlatProjects(state);
+        // Re-render the chart
+        renderGanttChart(container, state, theme, width, height);
+      });
+
       contentWrapper.appendChild(expandIcon);
     }
 
@@ -906,7 +961,7 @@ function renderProjectRows(
   projectsToRender.forEach((project, index) => {
     const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
 
-    // Create wrapper - either an SVG <a> element (if link exists) or a <g> element
+    // Create wrapper group for the bar - use SVG <a> element if link exists
     let barGroup;
     if (project.link) {
       barGroup = svg.append('a')
@@ -920,8 +975,7 @@ function renderProjectRows(
     } else {
       barGroup = svg.append('g')
         .attr('class', 'bar-group')
-        .attr('transform', `translate(0, ${yPosition})`)
-        .style('cursor', 'default');
+        .attr('transform', `translate(0, ${yPosition})`);
     }
 
     const x1 = xScale(project.startDate);
@@ -1073,7 +1127,8 @@ function renderProjectRows(
       .attr('opacity', 0.6)
       .text(dateFormat(project.endDate));
 
-    // Tooltip
+
+    // Tooltip and click handlers
     const hoursDisplayText = formatHoursDisplay(project.hoursBilled, project.hoursEstimated, project.hoursBudgeted);
     barGroup
       .on('mouseenter', function(event) {
