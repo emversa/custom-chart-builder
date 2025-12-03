@@ -552,6 +552,7 @@ function flattenHierarchy(projects: Project[], depth: number = 0): Project[] {
 
 // Store expanded state by project ID (persists across re-renders)
 const expandedState = new Map<string, boolean>();
+let allExpandedState = true; // Track global expand/collapse state
 
 function toggleExpanded(projectId: string): void {
   const current = expandedState.get(projectId);
@@ -561,6 +562,26 @@ function toggleExpanded(projectId: string): void {
 function isExpanded(projectId: string): boolean {
   const state = expandedState.get(projectId);
   return state === undefined ? true : state; // Default to expanded
+}
+
+function expandAll(projects: Project[]): void {
+  projects.forEach(p => {
+    expandedState.set(p.id, true);
+    if (p.children?.length) {
+      expandAll(p.children);
+    }
+  });
+  allExpandedState = true;
+}
+
+function collapseAll(projects: Project[]): void {
+  projects.forEach(p => {
+    expandedState.set(p.id, false);
+    if (p.children?.length) {
+      collapseAll(p.children);
+    }
+  });
+  allExpandedState = false;
 }
 
 function updateFlatProjects(state: ChartState): void {
@@ -669,13 +690,54 @@ function renderGanttChart(
   leftPanel.style.width = `${LEFT_PANEL_WIDTH}px`;
   contentArea.appendChild(leftPanel);
 
-  // Create left panel header (spacer to align with timeline header)
+  // Create left panel header with expand/collapse toggle button
   const leftPanelHeader = document.createElement('div');
   leftPanelHeader.className = 'gantt-left-header';
   leftPanelHeader.style.height = `${TIMELINE_HEADER_HEIGHT}px`;
   leftPanelHeader.style.borderBottom = `2px solid ${getThemedColor('#E2E8F0', '#334155', theme.isDark)}`;
   leftPanelHeader.style.flexShrink = '0';
+  leftPanelHeader.style.display = 'flex';
+  leftPanelHeader.style.alignItems = 'flex-end';
+  leftPanelHeader.style.justifyContent = 'flex-start';
+  leftPanelHeader.style.padding = '0 0 4px 0';
   leftPanel.appendChild(leftPanelHeader);
+
+  // Create toggle expand/collapse button
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'gantt-expand-collapse-btn';
+  toggleBtn.title = allExpandedState ? 'Collapse all' : 'Expand all';
+  toggleBtn.textContent = allExpandedState ? '▼' : '▶'; // down or right arrow
+  toggleBtn.style.cssText = `
+    background: ${getThemedColor('#F1F5F9', '#334155', theme.isDark)};
+    border: 1px solid ${getThemedColor('#CBD5E1', '#475569', theme.isDark)};
+    border-radius: 4px;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    font-size: 10px;
+    color: ${theme.mainColor};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  `;
+  toggleBtn.addEventListener('mouseenter', () => {
+    toggleBtn.style.background = getThemedColor('#E2E8F0', '#475569', theme.isDark);
+  });
+  toggleBtn.addEventListener('mouseleave', () => {
+    toggleBtn.style.background = getThemedColor('#F1F5F9', '#334155', theme.isDark);
+  });
+  toggleBtn.addEventListener('click', () => {
+    if (allExpandedState) {
+      collapseAll(state.projects);
+    } else {
+      expandAll(state.projects);
+    }
+    updateFlatProjects(state);
+    renderGanttChart(container, state, theme, width, height);
+  });
+  leftPanelHeader.appendChild(toggleBtn);
 
   // Create left panel body (scrollable project names)
   const leftPanelBody = document.createElement('div');
