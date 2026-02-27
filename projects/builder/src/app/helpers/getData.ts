@@ -35,17 +35,30 @@ export function buildLuzmoQuery(
   const measures: ItemQueryMeasure[] = [];
   const order: ItemQuery['order'] = [];
 
-  // Add dimensions and measures dynamically based on slot configurations
-  for (const slotConfig of slotConfigurations) {
+  // IMPORTANT: Iterate slots in the same order as the chart's buildQuery function
+  // so that column indices in the response match processData's expectations.
+  // Required dimensions first, then optional dimensions in buildQuery order.
+  const REQUIRED_SLOT_ORDER = ['name', 'category', 'time', 'evolution'];
+  const OPTIONAL_SLOT_ORDER = ['row', 'destination', 'identifier', 'dimension', 'color', 'levels', 'slidermetric', 'measure', 'columns', 'size'];
+  const SLOT_ORDER = [...REQUIRED_SLOT_ORDER, ...OPTIONAL_SLOT_ORDER];
+
+  for (const slotName of SLOT_ORDER) {
+    const slotConfig = slotConfigurations.find(sc => sc.name === slotName);
+    if (!slotConfig) continue;
+
     const slotDef = slotDefs[slotConfig.name];
+    if (!slotDef) continue;
+
     const capitalizedName = slotConfig.name.charAt(0).toUpperCase() + slotConfig.name.slice(1);
     const hasKey = `has${capitalizedName}`;
     const contentKey = `content${capitalizedName}`;
 
     if (slotDef[hasKey] as boolean) {
+      const isAggregationDisabled = !!(slotConfig as any).options?.isAggregationDisabled;
+
       for (const item of slotDef[contentKey] as GenericSlotContent[]) {
-        // Determine if this should be a dimension or measure based, on slot type
-        if (slotConfig.type === 'numeric') {
+        if (slotConfig.type === 'numeric' && !isAggregationDisabled) {
+          // Numeric slot WITH aggregation enabled → measure
           if (item.aggregationFunc) {
             measures.push({
               dataset_id: item.datasetId,
@@ -61,6 +74,7 @@ export function buildLuzmoQuery(
           }
         }
         else {
+          // Categorical slots AND numeric slots with isAggregationDisabled → dimension
           dimensions.push({
             dataset_id: item.datasetId,
             column_id: item.columnId,

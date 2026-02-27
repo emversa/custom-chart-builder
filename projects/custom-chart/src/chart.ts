@@ -77,7 +77,8 @@ const COLOR_MAP: Record<string, string> = {
   PURPLE: '#A78BFA',
   ORANGE: '#FB923C',
   GREEN: '#4ADE80',
-  GRAY: '#94A3B8'
+  GRAY: '#94A3B8',
+  GREY: '#94A3B8'
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -88,11 +89,13 @@ const STATUS_COLORS: Record<string, string> = {
   pipeline: '#94A3B8'
 };
 
-const CATEGORY_DEPTH: Record<string, number> = {
+// Hierarchy depth is computed dynamically from the parent chain.
+// Category ordering for display purposes only.
+const CATEGORY_ORDER: Record<string, number> = {
   organization: 0,
-  epic: 1,
-  story: 2,
-  deal: 1
+  deal: 1,
+  epic: 2,
+  story: 3
 };
 
 // ============================================================================
@@ -111,8 +114,13 @@ function extractValue(obj: any, type: 'string' | 'number' | 'date'): any {
 
     case 'number': {
       if (typeof obj === 'number') return obj;
-      if (typeof obj === 'object' && 'id' in obj) return Number(obj.id);
-      return Number(obj);
+      if (typeof obj === 'object' && 'id' in obj) {
+        if (obj.id === null || obj.id === undefined) return null;
+        const num = Number(obj.id);
+        return isNaN(num) ? null : num;
+      }
+      const num = Number(obj);
+      return isNaN(num) ? null : num;
     }
 
     case 'string': {
@@ -221,7 +229,7 @@ function processData(
   const clientSlot = slots.find(s => s.name === 'slidermetric');
   const linkSlot = slots.find(s => s.name === 'destination');
 
-  const projects: Project[] = [];
+  let projects: Project[] = [];
   let minDate = new Date();
   let maxDate = new Date();
 
@@ -237,7 +245,8 @@ function processData(
     if (startDateSlot?.content?.[0]) columnMapping['startDate'] = currentIndex++;
     if (endDateSlot?.content?.[0]) columnMapping['endDate'] = currentIndex++;
 
-    // Optional dimensions (matching buildQuery order: row, destination, identifier, dimension, color, levels, slidermetric)
+    // Optional dimensions (matching buildQuery order: row, destination, identifier, dimension, color, levels, slidermetric, measure, columns, size)
+    // Numeric slots (hours) are included as dimensions to prevent default API aggregation
     if (projectIdSlot?.content?.[0]) columnMapping['projectId'] = currentIndex++;
     if (linkSlot?.content?.[0]) columnMapping['link'] = currentIndex++;
     if (statusSlot?.content?.[0]) columnMapping['status'] = currentIndex++;
@@ -245,8 +254,6 @@ function processData(
     if (colorCodeSlot?.content?.[0]) columnMapping['colorCode'] = currentIndex++;
     if (parentIdSlot?.content?.[0]) columnMapping['parentId'] = currentIndex++;
     if (clientSlot?.content?.[0]) columnMapping['client'] = currentIndex++;
-
-    // Measures come after dimensions
     if (hoursBilledSlot?.content?.[0]) columnMapping['hoursBilled'] = currentIndex++;
     if (hoursEstimatedSlot?.content?.[0]) columnMapping['hoursEstimated'] = currentIndex++;
     if (hoursBudgetedSlot?.content?.[0]) columnMapping['hoursBudgeted'] = currentIndex++;
@@ -267,36 +274,157 @@ function processData(
       const client = 'client' in columnMapping ? extractValue(row[columnMapping['client']], 'string') : undefined;
       const link = 'link' in columnMapping ? extractValue(row[columnMapping['link']], 'string') : undefined;
 
-      if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-        return;
-      }
+      const catLower = (category || 'epic').toLowerCase();
+      const rawId = projectId || `project-${index}`;
+      const compositeId = `${catLower}_${rawId}`;
+      const rawParentId = parentId && parentId !== 'null' && parentId !== '' ? parentId : null;
+
+      // Keep all rows — dateless rows are valid hierarchy parents at any level.
+      // Sentinel dates will be replaced by children's date ranges later.
+      const hasDates = startDate && endDate && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime());
+
+      const effectiveStart = hasDates ? startDate : new Date('2099-01-01');
+      const effectiveEnd = hasDates ? endDate : new Date('1970-01-01');
 
       projects.push({
-        id: projectId || `project-${index}`,
-        category: category || 'epic',
+        id: compositeId,
+        category: catLower,
         name: name || `Project ${index + 1}`,
-        startDate,
-        endDate,
+        startDate: effectiveStart,
+        endDate: effectiveEnd,
         assignee,
         status: status || 'active',
         hoursBilled,
         hoursEstimated,
         hoursBudgeted,
         colorCode: colorCode || 'PURPLE',
-        parentId: parentId && parentId !== 'null' && parentId !== '' ? parentId : null,
+        parentId: rawParentId, // will be resolved to composite ID below
         client,
         link,
-        depth: getCategoryDepth(category)
-      });
+        depth: 0, // will be computed from parent chain after ID resolution
+        _rawId: rawId // stash raw ID for parent resolution
+      } as any);
 
-      if (projects.length === 1) {
-        minDate = new Date(startDate);
-        maxDate = new Date(endDate);
-      } else {
-        if (startDate < minDate) minDate = new Date(startDate);
-        if (endDate > maxDate) maxDate = new Date(endDate);
+      if (hasDates) {
+        if (minDate.getTime() === maxDate.getTime() && projects.length === 1) {
+          minDate = new Date(effectiveStart);
+          maxDate = new Date(effectiveEnd);
+        } else {
+          if (effectiveStart < minDate) minDate = new Date(effectiveStart);
+          if (effectiveEnd > maxDate) maxDate = new Date(effectiveEnd);
+        }
       }
     });
+
+    // Resolve parentId from raw IDs to composite IDs.
+    // Build a lookup: rawId → composite project, grouped by category.
+    const rawIdToComposite = new Map<string, Project[]>();
+    projects.forEach(p => {
+      const rawId = (p as any)._rawId || p.id;
+      if (!rawIdToComposite.has(rawId)) rawIdToComposite.set(rawId, []);
+      rawIdToComposite.get(rawId)!.push(p);
+    });
+
+    // Parent category priority when an ID collides across categories.
+    // Based on production data: deals → org/deal, epics → deal/org, stories → epic/story
+    const PARENT_CATEGORY_PRIORITY: Record<string, string[]> = {
+      deal: ['organization', 'deal'],
+      epic: ['deal', 'organization'],
+      story: ['epic', 'story'],
+      client: [],
+      organization: []
+    };
+
+    projects.forEach(p => {
+      if (!p.parentId) return;
+      const candidates = rawIdToComposite.get(p.parentId);
+      if (!candidates || candidates.length === 0) {
+        p.parentId = null;
+        return;
+      }
+      if (candidates.length === 1) {
+        p.parentId = candidates[0].id;
+        return;
+      }
+      // Multiple candidates — pick the one matching the expected parent category
+      const priorities = PARENT_CATEGORY_PRIORITY[p.category] || [];
+      const match = priorities.length > 0
+        ? candidates.find(c => priorities.includes(c.category))
+        : undefined;
+      p.parentId = (match || candidates[0]).id;
+    });
+
+    // Clean up temporary _rawId
+    projects.forEach(p => delete (p as any)._rawId);
+
+    // Compute depth from actual parent chain (not fixed category mapping)
+    const projectMap = new Map<string, Project>();
+    projects.forEach(p => projectMap.set(p.id, p));
+
+    function computeDepth(p: Project, visited = new Set<string>()): number {
+      if (!p.parentId || visited.has(p.id)) return 0;
+      visited.add(p.id);
+      const parent = projectMap.get(p.parentId);
+      if (!parent) return 0;
+      return 1 + computeDepth(parent, visited);
+    }
+    projects.forEach(p => { p.depth = computeDepth(p); });
+
+    // Build children lists for bottom-up date propagation
+    const SENTINEL_START = new Date('2099-01-01').getTime();
+    const SENTINEL_END = new Date('1970-01-01').getTime();
+    const childrenOf = new Map<string, Project[]>();
+    projects.forEach(p => {
+      if (p.parentId) {
+        if (!childrenOf.has(p.parentId)) childrenOf.set(p.parentId, []);
+        childrenOf.get(p.parentId)!.push(p);
+      }
+    });
+
+    // Recursively propagate dates bottom-up: leaves first, then parents
+    function propagateDates(p: Project): void {
+      const children = childrenOf.get(p.id);
+      if (children) {
+        children.forEach(c => propagateDates(c));
+        // Now all children have resolved dates — derive parent's range
+        children.forEach(c => {
+          if (c.startDate.getTime() !== SENTINEL_START) {
+            if (p.startDate.getTime() === SENTINEL_START || c.startDate < p.startDate) {
+              p.startDate = new Date(c.startDate);
+            }
+          }
+          if (c.endDate.getTime() !== SENTINEL_END) {
+            if (p.endDate.getTime() === SENTINEL_END || c.endDate > p.endDate) {
+              p.endDate = new Date(c.endDate);
+            }
+          }
+        });
+      }
+    }
+
+    // Start propagation from roots
+    projects.filter(p => !p.parentId).forEach(root => propagateDates(root));
+
+    // Final pass: any still-sentinel dates fall back to global min/max
+    projects.forEach(p => {
+      if (p.startDate.getTime() === SENTINEL_START) p.startDate = new Date(minDate);
+      if (p.endDate.getTime() === SENTINEL_END) p.endDate = new Date(maxDate);
+      if (p.startDate < minDate) minDate = new Date(p.startDate);
+      if (p.endDate > maxDate) maxDate = new Date(p.endDate);
+    });
+
+    // Only keep rows that trace back to an organisation root.
+    // Orphan deals, epics, and stories with no chain to an org are excluded.
+    function tracesToOrg(p: Project, visited = new Set<string>()): boolean {
+      if (p.category === 'organization') return true;
+      if (!p.parentId || visited.has(p.id)) return false;
+      visited.add(p.id);
+      const parent = projectMap.get(p.parentId);
+      if (!parent) return false;
+      return tracesToOrg(parent, visited);
+    }
+
+    projects = projects.filter(p => tracesToOrg(p));
   }
 
   if (projects.length === 0) {
@@ -501,8 +629,8 @@ function processData(
   };
 }
 
-function getCategoryDepth(category: string): number {
-  return CATEGORY_DEPTH[category.toLowerCase()] ?? 0;
+function getCategoryOrder(category: string): number {
+  return CATEGORY_ORDER[category.toLowerCase()] ?? 0;
 }
 
 function buildHierarchy(projects: Project[]): Project[] {
@@ -925,7 +1053,7 @@ function renderProjectRows(
     row.style.color = theme.textColor;
 
     // Style row based on category level for visual hierarchy
-    const isTopLevel = project.category === 'organization';
+    const isTopLevel = project.depth === 0;
     if (isTopLevel) {
       row.style.backgroundColor = getThemedColor('#F8FAFC', '#1E293B', theme.isDark);
       row.style.borderTop = `1px solid ${getThemedColor('#CBD5E1', '#475569', theme.isDark)}`;
@@ -1022,6 +1150,7 @@ function renderProjectRows(
   // Render timeline bars
   projectsToRender.forEach((project, index) => {
     const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
+    const isStory = project.category === 'story';
 
     // Create wrapper group for the bar - use SVG <a> element if link exists
     let barGroup;
@@ -1045,31 +1174,48 @@ function renderProjectRows(
     const barWidth = Math.max(x2 - x1, 20);
     const barColor = COLOR_MAP[project.colorCode] || COLOR_MAP.PURPLE;
 
-    // Background bar
-    barGroup.append('rect')
-      .attr('x', x1)
-      .attr('y', 0)
-      .attr('width', barWidth)
-      .attr('height', BAR_HEIGHT)
-      .attr('rx', 4)
-      .attr('fill', barColor)
-      .attr('opacity', 0.3);
-
-    // Progress bar
-    const progress = calculateProgress(project.hoursBilled, project.hoursBudgeted);
-    if (progress > 0) {
+    if (!isStory) {
+      // Non-story rows (org, deal, epic): render a thin span line instead of a full bar
+      const lineY = BAR_HEIGHT / 2;
+      barGroup.append('line')
+        .attr('x1', x1)
+        .attr('y1', lineY)
+        .attr('x2', x1 + barWidth)
+        .attr('y2', lineY)
+        .attr('stroke', barColor)
+        .attr('stroke-width', 2)
+        .attr('opacity', 0.5);
+      // Small start/end markers
+      barGroup.append('circle').attr('cx', x1).attr('cy', lineY).attr('r', 3).attr('fill', barColor).attr('opacity', 0.6);
+      barGroup.append('circle').attr('cx', x1 + barWidth).attr('cy', lineY).attr('r', 3).attr('fill', barColor).attr('opacity', 0.6);
+    } else {
+      // Story rows: full bar
+      // Background bar
       barGroup.append('rect')
         .attr('x', x1)
         .attr('y', 0)
-        .attr('width', barWidth * progress)
+        .attr('width', barWidth)
         .attr('height', BAR_HEIGHT)
         .attr('rx', 4)
-        .attr('fill', barColor);
+        .attr('fill', barColor)
+        .attr('opacity', 0.3);
+
+      // Progress bar
+      const progress = calculateProgress(project.hoursBilled, project.hoursBudgeted);
+      if (progress > 0) {
+        barGroup.append('rect')
+          .attr('x', x1)
+          .attr('y', 0)
+          .attr('width', barWidth * progress)
+          .attr('height', BAR_HEIGHT)
+          .attr('rx', 4)
+          .attr('fill', barColor);
+      }
     }
 
     // Calculate available space and determine what to show
-    const showLabels = barWidth >= MIN_BAR_WIDTH_FOR_LABELS;
-    const showInitials = barWidth >= MIN_BAR_WIDTH_FOR_INITIALS;
+    const showLabels = isStory && barWidth >= MIN_BAR_WIDTH_FOR_LABELS;
+    const showInitials = isStory && barWidth >= MIN_BAR_WIDTH_FOR_INITIALS;
 
     let currentX = x1 + 8;
 
@@ -1276,23 +1422,16 @@ function renderEmptyState(container: HTMLElement, theme: ThemeContext): void {
 // ============================================================================
 
 function buildDimension(column: any): any {
-  return {
+  const dim: any = {
     dataset_id: column.datasetId || column.set,
     column_id: column.columnId || column.column,
-    level: column.level || 1
   };
-}
-
-function buildMeasure(column: any): any {
-  const measure: any = {
-    dataset_id: column.datasetId || column.set,
-    column_id: column.columnId || column.column
-  };
-
-  // Don't add aggregation for Gantt chart - we want raw values
-  // The manifest already has isAggregationDisabled: true for hour slots
-
-  return measure;
+  // Only add level for columns that have it (categorical/datetime),
+  // not for numeric columns used as dimensions
+  if (column.level) {
+    dim.level = column.level;
+  }
+  return dim;
 }
 
 export const buildQuery = ({
@@ -1303,10 +1442,8 @@ export const buildQuery = ({
   slotConfigurations: SlotConfig[];
 }): ItemQuery => {
   const dimensions: any[] = [];
-  const measures: any[] = [];
 
-  // Only add required dimensions (not all slots)
-  // Required: name, category, time (start), evolution (end)
+  // Required dimensions: name, category, time (start), evolution (end)
   const requiredDimensions = ['name', 'category', 'time', 'evolution'];
 
   requiredDimensions.forEach(slotName => {
@@ -1316,21 +1453,16 @@ export const buildQuery = ({
     }
   });
 
-  // Add optional categorical dimensions only if they have content
-  const optionalDimensions = ['row', 'destination', 'identifier', 'dimension', 'color', 'levels', 'slidermetric'];
+  // Optional dimensions - includes numeric slots (measure, columns, size)
+  // which are added as dimensions instead of measures so that:
+  // 1. Rows with NULL values are still returned by the API
+  // 2. No default aggregation is applied that would collapse/group rows
+  const optionalDimensions = ['row', 'destination', 'identifier', 'dimension', 'color', 'levels', 'slidermetric', 'measure', 'columns', 'size'];
 
   optionalDimensions.forEach(slotName => {
     const slot = slots.find(s => s.name === slotName);
     if (slot?.content && slot.content.length > 0) {
       dimensions.push(buildDimension(slot.content[0]));
-    }
-  });
-
-  // Add numeric measures only if they have content
-  ['measure', 'columns', 'size'].forEach(slotName => {
-    const slot = slots.find(s => s.name === slotName);
-    if (slot?.content && slot.content.length > 0) {
-      measures.push(buildMeasure(slot.content[0]));
     }
   });
 
@@ -1340,14 +1472,14 @@ export const buildQuery = ({
       dimensions: [],
       measures: [],
       order: [],
-      limit: { by: 100, offset: 0 }
+      limit: { by: 10000, offset: 0 }
     };
   }
 
   return {
     dimensions,
-    measures,
+    measures: [],
     order: [],
-    limit: { by: 100, offset: 0 }
+    limit: { by: 10000, offset: 0 }
   };
 };

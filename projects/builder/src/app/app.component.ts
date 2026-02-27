@@ -1078,6 +1078,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewChecked {
     // Create updated slots
     const updatedSlots = currentSlots.map((slot) => {
       if (slot.name === slotName) {
+        const slotConfig = this.slotConfigs.find(sc => sc.name === slotName);
+        const isAggregationDisabled = !!(slotConfig as any)?.options?.isAggregationDisabled;
         const content = event.detail.slotContents.map((column) => ({
           columnId: column.columnId,
           column: column.column,
@@ -1091,7 +1093,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewChecked {
           subtype: column.subtype,
           type: column.type,
           aggregationFunc:
-            slotType === 'numeric'
+            slotType === 'numeric' && !isAggregationDisabled
               ? column.aggregationFunc || 'sum'
               : undefined,
         }));
