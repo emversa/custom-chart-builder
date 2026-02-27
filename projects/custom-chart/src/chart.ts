@@ -751,6 +751,7 @@ export const render = ({
   (container as any).__chartState = state;
   (container as any).__theme = theme;
   (container as any).__dimensions = { width, height };
+  (container as any).__slots = slots;
 
   renderGanttChart(container, state, theme, width, height);
 };
@@ -1032,6 +1033,28 @@ function renderTimelineHeader(
   }
 }
 
+function sendFilter(container: HTMLElement, slotName: string, value: string): void {
+  const slots: Slot[] = (container as any).__slots || [];
+  const slot = slots.find(s => s.name === slotName);
+  const content = slot?.content?.[0];
+  if (!content) return;
+
+  const datasetId = content.datasetId || (content as any).set;
+  const columnId = content.columnId || (content as any).column;
+  if (!datasetId || !columnId) return;
+
+  window.parent.postMessage({
+    type: 'setFilter',
+    filters: [{
+      expression: '? = ?',
+      parameters: [
+        { columnId, datasetId },
+        value
+      ]
+    }]
+  }, '*');
+}
+
 function renderProjectRows(
   container: HTMLElement,
   leftPanel: HTMLElement,
@@ -1111,6 +1134,11 @@ function renderProjectRows(
       const clientBadge = document.createElement('span');
       clientBadge.className = 'client-badge';
       clientBadge.textContent = project.client;
+      clientBadge.style.cursor = 'pointer';
+      clientBadge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sendFilter(container, 'slidermetric', project.client!);
+      });
       metaSection.appendChild(clientBadge);
     }
 
@@ -1119,9 +1147,20 @@ function renderProjectRows(
     categoryBadge.className = 'category-badge';
     categoryBadge.textContent = project.category.toUpperCase();
     categoryBadge.title = project.category;
+    categoryBadge.style.cursor = 'pointer';
+    categoryBadge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendFilter(container, 'category', project.category);
+    });
     metaSection.appendChild(categoryBadge);
 
     contentWrapper.appendChild(metaSection);
+
+    // Row click → filter by entity name
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => {
+      sendFilter(container, 'name', project.name);
+    });
 
     row.appendChild(contentWrapper);
     leftPanel.appendChild(row);
@@ -1381,6 +1420,9 @@ function renderProjectRows(
       })
       .on('mouseleave', function() {
         d3.select(timelineBody).selectAll('.gantt-tooltip').remove();
+      })
+      .on('click', function() {
+        sendFilter(container, 'name', project.name);
       });
   });
 
