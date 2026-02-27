@@ -786,6 +786,11 @@ function renderGanttChart(
   container.innerHTML = '';
   container.style.backgroundColor = theme.backgroundColor;
   container.style.fontFamily = theme.fontFamily;
+  // Set explicit pixel dimensions on the container so all children
+  // using height:100% / flex:1 resolve to actual pixel values.
+  container.style.width = `${width}px`;
+  container.style.height = `${height}px`;
+  container.style.overflow = 'hidden';
 
   if (state.projects.length === 0) {
     renderEmptyState(container, theme);
@@ -808,15 +813,21 @@ function renderGanttChart(
   title.textContent = 'Project Status Dashboard';
   header.appendChild(title);
 
-  // Create content area
+  // Measure header height so we can compute exact content height
+  const headerHeight = header.offsetHeight || 52;
+
+  // Create content area with explicit height
   const contentArea = document.createElement('div');
   contentArea.className = 'gantt-content';
+  const contentHeight = height - headerHeight - PADDING * 2;
+  contentArea.style.height = `${contentHeight}px`;
   mainContainer.appendChild(contentArea);
 
   // Create left panel (project names)
   const leftPanel = document.createElement('div');
   leftPanel.className = 'gantt-left-panel';
   leftPanel.style.width = `${LEFT_PANEL_WIDTH}px`;
+  leftPanel.style.height = `${contentHeight}px`;
   contentArea.appendChild(leftPanel);
 
   // Create left panel header with expand/collapse toggle button
@@ -869,9 +880,10 @@ function renderGanttChart(
   leftPanelHeader.appendChild(toggleBtn);
 
   // Create left panel body (scrollable project names)
+  const scrollableHeight = contentHeight - TIMELINE_HEADER_HEIGHT;
   const leftPanelBody = document.createElement('div');
   leftPanelBody.className = 'gantt-left-body';
-  leftPanelBody.style.flex = '1';
+  leftPanelBody.style.height = `${scrollableHeight}px`;
   leftPanelBody.style.overflowY = 'auto';
   leftPanelBody.style.overflowX = 'hidden';
   leftPanel.appendChild(leftPanelBody);
@@ -879,11 +891,12 @@ function renderGanttChart(
   // Create right panel (timeline)
   const rightPanel = document.createElement('div');
   rightPanel.className = 'gantt-right-panel';
+  rightPanel.style.height = `${contentHeight}px`;
   contentArea.appendChild(rightPanel);
 
   // Render timeline
   const timelineWidth = width - LEFT_PANEL_WIDTH - PADDING * 2;
-  const timelineHeight = height - TIMELINE_HEADER_HEIGHT - PADDING * 2;
+  const timelineHeight = scrollableHeight;
 
   renderTimeline(container, rightPanel, leftPanelBody, state, theme, timelineWidth, timelineHeight, width, height);
 }
@@ -907,9 +920,12 @@ function renderTimeline(
   timelineHeader.style.height = `${TIMELINE_HEADER_HEIGHT}px`;
   rightPanel.appendChild(timelineHeader);
 
-  // Create timeline body container
+  // Create timeline body container with explicit height for vertical scrolling
   const timelineBody = document.createElement('div');
   timelineBody.className = 'timeline-body';
+  timelineBody.style.height = `${height}px`;
+  timelineBody.style.overflowY = 'auto';
+  timelineBody.style.overflowX = 'auto';
   rightPanel.appendChild(timelineBody);
 
   // Use flatProjects length for height calculation
@@ -1033,6 +1049,9 @@ function renderTimelineHeader(
   }
 }
 
+// Track active filter to support toggle (click again to clear)
+let activeFilter: { slotName: string; value: string } | null = null;
+
 function sendFilter(container: HTMLElement, slotName: string, value: string): void {
   const slots: Slot[] = (container as any).__slots || [];
   const slot = slots.find(s => s.name === slotName);
@@ -1043,6 +1062,17 @@ function sendFilter(container: HTMLElement, slotName: string, value: string): vo
   const columnId = content.columnId || (content as any).column;
   if (!datasetId || !columnId) return;
 
+  // Toggle: if same filter is already active, clear it
+  if (activeFilter && activeFilter.slotName === slotName && activeFilter.value === value) {
+    activeFilter = null;
+    window.parent.postMessage({
+      type: 'setFilter',
+      filters: []
+    }, '*');
+    return;
+  }
+
+  activeFilter = { slotName, value };
   window.parent.postMessage({
     type: 'setFilter',
     filters: [{
@@ -1158,7 +1188,8 @@ function renderProjectRows(
 
     // Row click → filter by entity name
     row.style.cursor = 'pointer';
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
       sendFilter(container, 'name', project.name);
     });
 
@@ -1420,9 +1451,6 @@ function renderProjectRows(
       })
       .on('mouseleave', function() {
         d3.select(timelineBody).selectAll('.gantt-tooltip').remove();
-      })
-      .on('click', function() {
-        sendFilter(container, 'name', project.name);
       });
   });
 
