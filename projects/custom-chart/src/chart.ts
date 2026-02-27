@@ -413,18 +413,25 @@ function processData(
       if (p.endDate > maxDate) maxDate = new Date(p.endDate);
     });
 
-    // Only keep rows that trace back to an organisation root.
-    // Orphan deals, epics, and stories with no chain to an org are excluded.
-    function tracesToOrg(p: Project, visited = new Set<string>()): boolean {
-      if (p.category === 'organization') return true;
-      if (!p.parentId || visited.has(p.id)) return false;
-      visited.add(p.id);
-      const parent = projectMap.get(p.parentId);
-      if (!parent) return false;
-      return tracesToOrg(parent, visited);
+    // Only keep rows that trace back to an organisation root — but only
+    // when the dataset contains organisation rows (i.e. unfiltered or
+    // filtered by client).  When the dashboard applies external filters
+    // (e.g. category = 'story', status = 'active'), the API returns a
+    // subset that may not include the parent chain.  In that case,
+    // skipping this filter keeps the data visible instead of discarding
+    // every row and falling through to the empty-state sample data.
+    const hasOrgs = projects.some(p => p.category === 'organization');
+    if (hasOrgs) {
+      function tracesToOrg(p: Project, visited = new Set<string>()): boolean {
+        if (p.category === 'organization') return true;
+        if (!p.parentId || visited.has(p.id)) return false;
+        visited.add(p.id);
+        const parent = projectMap.get(p.parentId);
+        if (!parent) return false;
+        return tracesToOrg(parent, visited);
+      }
+      projects = projects.filter(p => tracesToOrg(p));
     }
-
-    projects = projects.filter(p => tracesToOrg(p));
   }
 
   if (projects.length === 0) {
@@ -1222,21 +1229,20 @@ function renderProjectRows(
     const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
     const isStory = project.category === 'story';
 
-    // Create wrapper group for the bar - use SVG <a> element if link exists
-    let barGroup;
+    // Create wrapper group for the bar
+    const barGroup = svg.append('g')
+      .attr('class', 'bar-group')
+      .attr('transform', `translate(0, ${yPosition})`)
+      .style('cursor', project.link ? 'pointer' : 'default');
+
+    // Open link via postMessage to parent (SVG <a> doesn't work inside
+    // sandboxed iframes in production Luzmo environment)
     if (project.link) {
-      barGroup = svg.append('a')
-        .attr('href', project.link)
-        .attr('target', '_blank')
-        .attr('rel', 'noopener noreferrer')
-        .append('g')
-        .attr('class', 'bar-group')
-        .attr('transform', `translate(0, ${yPosition})`)
-        .style('cursor', 'pointer');
-    } else {
-      barGroup = svg.append('g')
-        .attr('class', 'bar-group')
-        .attr('transform', `translate(0, ${yPosition})`);
+      const linkUrl = project.link;
+      barGroup.on('click', function(event: any) {
+        event.stopPropagation();
+        window.parent.postMessage({ type: 'openLink', url: linkUrl }, '*');
+      });
     }
 
     const x1 = xScale(project.startDate);
