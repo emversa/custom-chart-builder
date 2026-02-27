@@ -1235,13 +1235,15 @@ function renderProjectRows(
       .attr('transform', `translate(0, ${yPosition})`)
       .style('cursor', project.link ? 'pointer' : 'default');
 
-    // Open link via postMessage to parent (SVG <a> doesn't work inside
-    // sandboxed iframes in production Luzmo environment)
+    // Open link on click — try window.open first, fall back to postMessage
     if (project.link) {
       const linkUrl = project.link;
       barGroup.on('click', function(event: any) {
         event.stopPropagation();
-        window.parent.postMessage({ type: 'openLink', url: linkUrl }, '*');
+        const win = window.open(linkUrl, '_blank', 'noopener,noreferrer');
+        if (!win) {
+          window.parent.postMessage({ type: 'openLink', url: linkUrl }, '*');
+        }
       });
     }
 
