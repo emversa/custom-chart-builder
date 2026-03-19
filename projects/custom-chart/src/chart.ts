@@ -82,12 +82,40 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  // Original statuses
   active: '#4ADE80',
   'at risk': '#FB923C',
   completed: '#60A5FA',
   'in planning': '#94A3B8',
-  pipeline: '#94A3B8'
+  pipeline: '#94A3B8',
+  // Production dataset statuses (case-insensitive via .toLowerCase())
+  done: '#60A5FA',
+  backlog: '#94A3B8',
+  'to do': '#94A3B8',
+  'to-do': '#94A3B8',
+  'in-progress': '#FB923C',
+  'in progress': '#FB923C',
+  qa: '#A78BFA',
+  blocked: '#EF4444',
+  'stage & deploy': '#60A5FA',
+  estimation: '#94A3B8',
+  uat: '#A78BFA',
+  'on hold': '#FB923C',
+  testing: '#A78BFA',
+  'waiting for customer': '#94A3B8',
+  approval: '#FBBF24',
+  'waiting for support': '#94A3B8',
+  open: '#4ADE80'
 };
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // Hierarchy depth is computed dynamically from the parent chain.
 // Category ordering for display purposes only.
@@ -283,8 +311,15 @@ function processData(
       // Sentinel dates will be replaced by children's date ranges later.
       const hasDates = startDate && endDate && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime());
 
-      const effectiveStart = hasDates ? startDate : new Date('2099-01-01');
-      const effectiveEnd = hasDates ? endDate : new Date('1970-01-01');
+      // Swap inverted dates (172 rows in production have start > end)
+      let effectiveStart: Date, effectiveEnd: Date;
+      if (hasDates) {
+        effectiveStart = startDate <= endDate ? startDate : endDate;
+        effectiveEnd = startDate <= endDate ? endDate : startDate;
+      } else {
+        effectiveStart = new Date('2099-01-01');
+        effectiveEnd = new Date('1970-01-01');
+      }
 
       projects.push({
         id: compositeId,
@@ -352,6 +387,11 @@ function processData(
         ? candidates.find(c => priorities.includes(c.category))
         : undefined;
       p.parentId = (match || candidates[0]).id;
+    });
+
+    // Nullify self-referencing parentIds (e.g. deal_23 → deal_23)
+    projects.forEach(p => {
+      if (p.parentId === p.id) p.parentId = null;
     });
 
     // Clean up temporary _rawId
@@ -430,7 +470,19 @@ function processData(
         if (!parent) return false;
         return tracesToOrg(parent, visited);
       }
-      projects = projects.filter(p => tracesToOrg(p));
+      const filtered = projects.filter(p => tracesToOrg(p));
+      if (filtered.length > 0) {
+        projects = filtered;
+      } else {
+        // tracesToOrg removed everything — combined filter edge case
+        // (e.g. Client + Category=deal). Keep all rows but nullify
+        // parentIds pointing to parents not in the dataset.
+        projects.forEach(p => {
+          if (p.parentId && !projectMap.has(p.parentId)) {
+            p.parentId = null;
+          }
+        });
+      }
     }
   }
 
@@ -652,7 +704,8 @@ function buildHierarchy(projects: Project[]): Project[] {
   projects.forEach(project => {
     const node = projectMap.get(project.id)!;
 
-    if (!project.parentId) {
+    // Treat as root if no parent, self-referencing, or parent missing
+    if (!project.parentId || project.parentId === project.id) {
       roots.push(node);
     } else {
       const parent = projectMap.get(project.parentId);
@@ -1059,23 +1112,25 @@ function renderTimelineHeader(
 // Track active filter to support toggle (click again to clear)
 let activeFilter: { slotName: string; value: string } | null = null;
 
-function sendFilter(container: HTMLElement, slotName: string, value: string): void {
+function getSlotColumn(container: HTMLElement, slotName: string): { columnId: string; datasetId: string } | null {
   const slots: Slot[] = (container as any).__slots || [];
   const slot = slots.find(s => s.name === slotName);
   const content = slot?.content?.[0];
-  if (!content) return;
-
+  if (!content) return null;
   const datasetId = content.datasetId || (content as any).set;
   const columnId = content.columnId || (content as any).column;
-  if (!datasetId || !columnId) return;
+  if (!datasetId || !columnId) return null;
+  return { columnId, datasetId };
+}
+
+function sendFilter(container: HTMLElement, slotName: string, value: string): void {
+  const col = getSlotColumn(container, slotName);
+  if (!col) return;
 
   // Toggle: if same filter is already active, clear it
   if (activeFilter && activeFilter.slotName === slotName && activeFilter.value === value) {
     activeFilter = null;
-    window.parent.postMessage({
-      type: 'setFilter',
-      filters: []
-    }, '*');
+    window.parent.postMessage({ type: 'setFilter', filters: [] }, '*');
     return;
   }
 
@@ -1084,10 +1139,50 @@ function sendFilter(container: HTMLElement, slotName: string, value: string): vo
     type: 'setFilter',
     filters: [{
       expression: '? = ?',
-      parameters: [
-        { columnId, datasetId },
-        value
-      ]
+      parameters: [{ columnId: col.columnId, datasetId: col.datasetId }, value]
+    }]
+  }, '*');
+}
+
+// Collect all IDs in a subtree (the node itself + all descendants).
+// Extracts raw IDs from composite IDs (strip category_ prefix).
+function collectSubtreeRawIds(project: Project): string[] {
+  const rawId = project.id.replace(/^[a-z]+_/, '');
+  const ids = [rawId];
+  if (project.children) {
+    project.children.forEach(child => {
+      ids.push(...collectSubtreeRawIds(child));
+    });
+  }
+  return ids;
+}
+
+// Send a filter that returns the clicked row and all its descendants
+// by filtering the ID column with '? in ?' expression.
+function sendSubtreeFilter(container: HTMLElement, project: Project): void {
+  const col = getSlotColumn(container, 'row'); // 'row' slot = project ID
+  if (!col) {
+    // Fallback to name filter if row slot not available
+    sendFilter(container, 'name', project.name);
+    return;
+  }
+
+  const ids = collectSubtreeRawIds(project);
+  const key = 'row:' + ids.join(',');
+
+  // Toggle: clicking same subtree again clears the filter
+  if (activeFilter && activeFilter.slotName === 'row' && activeFilter.value === key) {
+    activeFilter = null;
+    window.parent.postMessage({ type: 'setFilter', filters: [] }, '*');
+    return;
+  }
+
+  activeFilter = { slotName: 'row', value: key };
+  window.parent.postMessage({
+    type: 'setFilter',
+    filters: [{
+      expression: '? in ?',
+      parameters: [{ columnId: col.columnId, datasetId: col.datasetId }, ids]
     }]
   }, '*');
 }
@@ -1193,11 +1288,18 @@ function renderProjectRows(
 
     contentWrapper.appendChild(metaSection);
 
-    // Row click → filter by entity name
+    // Row click → filter by client for orgs (returns full hierarchy),
+    // by subtree IDs for rows with children, by name for leaf rows
     row.style.cursor = 'pointer';
     row.addEventListener('click', (e) => {
       e.stopPropagation();
-      sendFilter(container, 'name', project.name);
+      if (project.category === 'organization' && project.client) {
+        sendFilter(container, 'slidermetric', project.client);
+      } else if (project.children && project.children.length > 0) {
+        sendSubtreeFilter(container, project);
+      } else {
+        sendFilter(container, 'name', project.name);
+      }
     });
 
     row.appendChild(contentWrapper);
@@ -1229,22 +1331,38 @@ function renderProjectRows(
     const yPosition = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
     const isStory = project.category === 'story';
 
-    // Create wrapper group for the bar
-    const barGroup = svg.append('g')
-      .attr('class', 'bar-group')
-      .attr('transform', `translate(0, ${yPosition})`)
-      .style('cursor', project.link ? 'pointer' : 'default');
-
-    // Open link on click — try window.open first, fall back to postMessage
-    if (project.link) {
-      const linkUrl = project.link;
+    // Create wrapper group — SVG <a> for right-click "Open in new tab",
+    // plus a JS click handler that creates a temporary HTML <a> and clicks
+    // it programmatically. This bypasses iframe sandbox restrictions because
+    // the browser treats a programmatic .click() on an <a> element within
+    // a user event handler as user-initiated navigation.
+    let barGroup;
+    const isSafeUrl = project.link && /^https?:\/\//i.test(project.link);
+    if (isSafeUrl) {
+      const linkUrl = project.link!;
+      barGroup = svg.append('a')
+        .attr('href', linkUrl)
+        .attr('target', '_blank')
+        .attr('rel', 'noopener noreferrer')
+        .append('g')
+        .attr('class', 'bar-group')
+        .attr('transform', `translate(0, ${yPosition})`)
+        .style('cursor', 'pointer');
       barGroup.on('click', function(event: any) {
+        event.preventDefault();
         event.stopPropagation();
-        const win = window.open(linkUrl, '_blank', 'noopener,noreferrer');
-        if (!win) {
-          window.parent.postMessage({ type: 'openLink', url: linkUrl }, '*');
-        }
+        const a = document.createElement('a');
+        a.href = linkUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       });
+    } else {
+      barGroup = svg.append('g')
+        .attr('class', 'bar-group')
+        .attr('transform', `translate(0, ${yPosition})`);
     }
 
     const x1 = xScale(project.startDate);
@@ -1432,13 +1550,14 @@ function renderProjectRows(
           .style('z-index', '1000')
           .style('box-shadow', '0 4px 12px rgba(0, 0, 0, 0.3)');
 
+        const nameDisplay = escapeHtml(project.name.length > 80 ? project.name.substring(0, 80) + '...' : project.name);
         const tooltipContent = [
-          `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${project.name}</div>`,
-          project.client ? `<div><strong>Client:</strong> ${project.client}</div>` : null,
-          `<div><strong>Category:</strong> ${project.category}</div>`,
-          `<div><strong>Status:</strong> ${project.status}</div>`,
-          `<div><strong>Assignee:</strong> ${project.assignee || 'Unassigned'}</div>`,
-          `<div><strong>Hours:</strong> ${hoursDisplayText}</div>`,
+          `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${nameDisplay}</div>`,
+          project.client ? `<div><strong>Client:</strong> ${escapeHtml(project.client)}</div>` : null,
+          `<div><strong>Category:</strong> ${escapeHtml(project.category)}</div>`,
+          `<div><strong>Status:</strong> ${escapeHtml(project.status)}</div>`,
+          `<div><strong>Assignee:</strong> ${escapeHtml(project.assignee || 'Unassigned')}</div>`,
+          `<div><strong>Hours:</strong> ${escapeHtml(hoursDisplayText)}</div>`,
           `<div><strong>Duration:</strong> ${dateFormat(project.startDate)} - ${dateFormat(project.endDate)}</div>`
         ].filter(Boolean).join('');
 
